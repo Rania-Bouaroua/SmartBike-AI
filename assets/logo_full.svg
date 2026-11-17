@@ -1,17 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1460 400" width="1460" height="400">
-  <defs>
-    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#06B6D4"/>
-      <stop offset="0.55" stop-color="#4F46E5"/>
-      <stop offset="1" stop-color="#9333EA"/>
-    </linearGradient>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1606 400" width="1606" height="400">
   <image href="logo.svg" x="20" y="44" width="312" height="312"/>
-  <text x="380" y="222" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="150" font-weight="800"
-        fill="#0F172A" letter-spacing="-4">SmartBike</text>
-  <rect x="1180" y="98" width="230" height="150" rx="40" fill="url(#word)"/>
-  <text x="1295" y="222" text-anchor="middle" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="128"
-        font-weight="800" fill="#FFFFFF">AI</text>
-  <text x="386" y="318" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="46" font-weight="600"
-        fill="#64748B" letter-spacing="10">PREDICT · REBALANCE · RIDE</text>
+  <text x="378" y="226" font-family="Space Grotesk" font-size="164" font-weight="700" letter-spacing="0"
+        fill="#0B1020">SMART<tspan dx="16">BIKE</tspan></text>
+  <text x="1352" y="226" font-family="Space Grotesk" font-size="164" font-weight="500" letter-spacing="-4"
+        fill="none" stroke="#2563EB" stroke-width="4">AI</text>
+  <text x="384" y="306" font-family="Space Grotesk" font-size="40" font-weight="500" letter-spacing="9"
+        fill="#526174">PREDICT · REBALANCE · <tspan fill="#2563EB">RIDE</tspan></text>
 </svg>

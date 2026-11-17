@@ -25,106 +25,127 @@ st.set_page_config(page_title="SmartBike AI · Command Center", page_icon=str(LO
                    layout="wide", initial_sidebar_state="expanded")
 
 # ------------------------------------------------------------------ design system
-CYAN, INDIGO, VIOLET, AMBER, ROSE, EMERALD, SLATE = ("#22D3EE", "#818CF8", "#C084FC", "#FBBF24", "#FB7185",
-                                                      "#34D399", "#94A3B8")
+# Palette taken from the team portfolio (light + dark): ink #0B1020 · accent #2563EB · sky #8DDCFF · green #22C55E
+# · red #E5484D · gold · slate. Fonts: Space Grotesk (titles), Manrope (text), JetBrains Mono (labels).
+# Light/dark follows the viewer's choice (menu ⋮ > Settings, or the OS preference) via st.context.theme.
+DARK = (st.context.theme.type or "light") == "dark"
+P = dict(  # surface tokens
+    bg="#080B12", plate="#111827", line="rgba(184,196,214,.14)", text="#F8FAFC", muted="#94A3B8", ink="#E4EAF1",
+    accent="#8DDCFF", hero_shadow="0 30px 80px -30px rgba(0,0,0,.75)", grid="rgba(184,196,214,.08)",
+    feat_bg="#8DDCFF", feat_val="#080B12", feat_lbl="#0B1020", feat_sub="#1D3FA8",
+) if DARK else dict(
+    bg="#F8FAFC", plate="#FFFFFF", line="#E2E8F0", text="#0B1020", muted="#526174", ink="#0B1020",
+    accent="#2563EB", hero_shadow="0 30px 70px -35px rgba(16,24,39,.3)", grid="#EEF2F7",
+    feat_bg="#0B1020", feat_val="#FFFFFF", feat_lbl="#8DDCFF", feat_sub="#B8C4D6",
+)
+# (variable names kept from the first theme)
+CYAN, INDIGO, VIOLET, AMBER, ROSE, EMERALD, SLATE = ("#38BDF8", "#3B82F6" if DARK else "#2563EB", "#1D3FA8", "#A8822F",
+                                                      "#E5484D", "#22C55E", P["muted"])
+INK, SKY, GOLD, BRONZE, MUTED, LINE = P["ink"], "#8DDCFF", "#C9A54A", "#D9A57A", "#94A3B8", P["line"]
+ORANGE, PINK, TEAL, YELLOW = BRONZE, SKY, CYAN, GOLD
+INK_RGB = [228, 234, 241] if DARK else [11, 16, 32]
+BAR_SOFT = "#334155" if DARK else "#C7D2E3"
 RISK = {  # label, colour (rgb for maps), hex
-    "vide maintenant": ("Vide maintenant", [251, 113, 133], ROSE),
-    "risque vide": ("Risque de vide", [251, 191, 36], AMBER),
-    "saturee maintenant": ("Saturée maintenant", [192, 132, 252], VIOLET),
-    "risque saturee": ("Risque de saturation", [129, 140, 248], INDIGO),
-    "ok": ("OK", [52, 211, 153], EMERALD),
+    "vide maintenant": ("Vide maintenant", [229, 72, 77], ROSE),
+    "risque vide": ("Risque de vide", [201, 165, 74], GOLD),
+    "saturee maintenant": ("Saturée maintenant", INK_RGB, INK),
+    "risque saturee": ("Risque de saturation", [59, 130, 246], INDIGO),
+    "ok": ("OK", [34, 197, 94], EMERALD),
 }
-MAP_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+MAP_STYLE = ("https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json" if DARK
+             else "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json")
 NYC = pdk.ViewState(latitude=40.735, longitude=-73.965, zoom=11.2, pitch=45, bearing=-18)
+TAB_COLORS = [INK] * 7
+SEQ = ([[0, "#111827"], [.35, "#1D3FA8"], [.7, "#3B82F6"], [1, "#8DDCFF"]] if DARK
+       else [[0, "#F8FAFC"], [.3, "#8DDCFF"], [.65, "#2563EB"], [1, "#0B1020"]])
+SEQ_STRONG = ([[0, "#1E3A8A"], [.5, "#1D4ED8"], [1, "#3B82F6"]] if DARK
+              else [[0, "#60A5FA"], [.5, "#2563EB"], [1, "#0B1020"]])
+HEAT_TEXT = "#FFFFFF"
 
 
 def _b64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode() if path.exists() else ""
 
 
+_vars = ":root { " + " ".join(f"--{k.replace('_', '-')}:{v};" for k, v in P.items()) + " }"
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-html, body, [class*="css"], .stMarkdown, .stText, button, input { font-family: 'Inter', sans-serif !important; }
-.stApp {
-  background:
-    radial-gradient(1100px 600px at 0% -10%, rgba(34,211,238,.13), transparent 60%),
-    radial-gradient(900px 600px at 100% 0%, rgba(147,51,234,.16), transparent 60%),
-    #070B18;
-}
-#MainMenu, footer, header [data-testid="stToolbar"] { visibility: hidden; }
-.block-container { padding-top: 1.4rem; padding-bottom: 3rem; max-width: 1500px; }
-section[data-testid="stSidebar"] { background: linear-gradient(180deg, #0D1430 0%, #070B18 100%);
-  border-right: 1px solid rgba(129,140,248,.15); }
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+VARS
+html, body, [class*="css"], .stMarkdown, .stText, button, input { font-family: 'Manrope', sans-serif !important; }
+.stApp { background: var(--bg); }
+footer { visibility: hidden; }
+header[data-testid="stHeader"] { background: transparent; }
+.block-container { padding-top: 1.2rem; padding-bottom: 3rem; max-width: 1440px; }
+section[data-testid="stSidebar"] { background: var(--plate); border-right: 1px solid var(--line); }
+h1, h2, h3, .section, .kpi .val, .hero h1 { font-family: 'Space Grotesk', sans-serif !important; }
 
-.hero { display:flex; align-items:center; gap:22px; padding:22px 28px; border-radius:24px;
-  background: linear-gradient(120deg, rgba(6,182,212,.18), rgba(79,70,229,.22) 55%, rgba(147,51,234,.25));
-  border:1px solid rgba(255,255,255,.08); box-shadow: 0 20px 60px -20px rgba(79,70,229,.45); margin-bottom: 18px;
-  position:relative; overflow:hidden; }
-.hero:after { content:""; position:absolute; right:-80px; top:-80px; width:320px; height:320px; border-radius:50%;
-  background: radial-gradient(circle, rgba(251,191,36,.18), transparent 70%); }
-.hero img { width:84px; height:84px; filter: drop-shadow(0 10px 25px rgba(79,70,229,.6)); }
-.hero h1 { margin:0; font-size:2.3rem; font-weight:800; letter-spacing:-1px; color:#F8FAFC; line-height:1.1; }
-.hero h1 span { background: linear-gradient(90deg,#22D3EE,#818CF8,#C084FC); -webkit-background-clip:text;
-  -webkit-text-fill-color:transparent; }
-.hero p { margin:6px 0 0; color:#A5B4FC; font-size:.98rem; }
-.pill { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; font-size:.75rem;
-  font-weight:600; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.1); color:#E2E8F0;
-  margin-right:6px; margin-top:10px; }
-.dot { width:8px; height:8px; border-radius:50%; background:#34D399; box-shadow:0 0 0 0 rgba(52,211,153,.7);
-  animation: pulse 1.8s infinite; }
-@keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(52,211,153,.7); } 70% { box-shadow:0 0 0 9px rgba(52,211,153,0); }
-  100% { box-shadow:0 0 0 0 rgba(52,211,153,0); } }
+.hero { display:flex; align-items:center; gap:26px; padding:26px 30px; border-radius:22px; background:var(--plate);
+  border:1px solid var(--line); box-shadow: var(--hero-shadow); margin-bottom: 20px; }
+.hero img { width:92px; height:92px; border-radius:22px; }
+.hero h1 { margin:0; font-size:2.6rem; font-weight:700; letter-spacing:-1.5px; color:var(--text); line-height:1; }
+.hero h1 .o { color:transparent; -webkit-text-stroke: 1.4px var(--text); font-weight:500; }
+.hero .tag { font-family:'Space Grotesk',sans-serif; font-size:1.15rem; color:var(--text); margin-top:8px; font-weight:500; }
+.hero .mono { font-family:'JetBrains Mono',monospace; font-size:.85rem; color:var(--muted); margin-top:6px; }
+.hero .mono b { color:var(--accent); font-weight:500; }
+.pill { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; border-radius:999px; font-size:.78rem;
+  font-weight:600; color:var(--muted); background:var(--plate); border:1px solid var(--line); margin-right:6px;
+  margin-top:12px; }
+.pill.dark { background:var(--feat-bg); color:var(--feat-val); border-color:var(--feat-bg); }
+.dot { width:8px; height:8px; border-radius:50%; background:#22C55E; animation: pulse 1.8s infinite; }
+@keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(34,197,94,.55); } 70% { box-shadow:0 0 0 8px rgba(34,197,94,0); }
+  100% { box-shadow:0 0 0 0 rgba(34,197,94,0); } }
 
-.kpi-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:14px; margin: 6px 0 18px; }
-.kpi { position:relative; padding:16px 18px; border-radius:18px; background: rgba(17,24,51,.72);
-  border:1px solid rgba(129,140,248,.16); backdrop-filter: blur(8px); overflow:hidden;
-  transition: transform .2s ease, border-color .2s ease; }
-.kpi:hover { transform: translateY(-3px); border-color: rgba(129,140,248,.45); }
-.kpi:before { content:""; position:absolute; left:0; top:0; height:3px; width:100%; background:var(--c); }
-.kpi .lbl { color:#94A3B8; font-size:.74rem; font-weight:600; text-transform:uppercase; letter-spacing:.08em; }
-.kpi .val { color:#F8FAFC; font-size:1.75rem; font-weight:800; letter-spacing:-.5px; margin-top:4px; }
-.kpi .sub { color:var(--c); font-size:.8rem; font-weight:600; margin-top:2px; }
-.kpi .ico { position:absolute; right:14px; top:12px; font-size:1.5rem; opacity:.85; }
+.kpi-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:14px; margin: 6px 0 20px; }
+.kpi { position:relative; padding:16px 18px; border-radius:18px; background:var(--plate); border:1px solid var(--line);
+  transition: transform .18s ease, box-shadow .18s ease; }
+.kpi:hover { transform: translateY(-2px); box-shadow: 0 20px 40px -28px rgba(16,24,39,.45); }
+.kpi:first-child { background:var(--feat-bg); border-color:var(--feat-bg); }
+.kpi:first-child .val { color:var(--feat-val); } .kpi:first-child .lbl { color:var(--feat-lbl); }
+.kpi:first-child .sub { color:var(--feat-sub); }
+.kpi .lbl { font-family:'JetBrains Mono',monospace; color:var(--muted); font-size:.7rem; text-transform:uppercase;
+  letter-spacing:.06em; display:flex; align-items:center; gap:7px; }
+.kpi .lbl:before { content:""; width:7px; height:7px; border-radius:50%; background:var(--c); }
+.kpi .val { color:var(--text); font-size:1.7rem; white-space:nowrap; font-weight:700; letter-spacing:-.8px;
+  margin-top:6px; }
+.kpi .sub { color:var(--muted); font-size:.8rem; font-weight:600; }
+.kpi .ico { display:none; }
 
-.section { font-size:1.08rem; font-weight:700; color:#F1F5F9; margin: 10px 0 2px; display:flex; align-items:center;
-  gap:8px; }
-.section:before { content:""; width:4px; height:18px; border-radius:4px;
-  background: linear-gradient(180deg,#22D3EE,#C084FC); }
-.hint { color:#94A3B8; font-size:.84rem; margin-bottom:8px; }
+.section { font-size:1.2rem; font-weight:600; color:var(--text); margin: 14px 0 0; letter-spacing:-.3px; }
+.hint { font-family:'JetBrains Mono',monospace; color:var(--muted); font-size:.76rem; margin:2px 0 10px; }
 
-.stTabs [role="tablist"] { gap:6px; background: rgba(17,24,51,.6); padding:6px; border-radius:16px;
-  border:1px solid rgba(129,140,248,.14); }
-.stTabs [role="tab"] { height:42px; border-radius:12px; padding:0 16px; color:#CBD5E1; font-weight:600; }
-.stTabs [role="tab"][aria-selected="true"] { background: linear-gradient(120deg, #0891B2, #4F46E5 60%, #7E22CE) !important;
-  color:white !important; }
-.stTabs [role="tab"][aria-selected="true"] p { color:white !important; }
+.stTabs [role="tablist"] { gap:6px; flex-wrap:wrap; background:var(--plate); border:1px solid var(--line); padding:6px;
+  border-radius:16px; }
+.stTabs [role="tab"] { height:40px; border-radius:11px; padding:0 15px; }
+.stTabs [role="tab"] p { font-weight:600; color:var(--muted); }
+.stTabs [role="tab"][aria-selected="true"] { background:var(--feat-bg) !important; }
+.stTabs [role="tab"][aria-selected="true"] p { color:var(--feat-val) !important; }
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display:none; }
-.stTabs [role="tab"] p { font-weight:600; }
 
 div[data-testid="stPlotlyChart"], div[data-testid="stDeckGlJsonChart"], div[data-testid="stDataFrame"] {
-  border-radius:18px; overflow:hidden; border:1px solid rgba(129,140,248,.14); background: rgba(17,24,51,.5); }
-.card { padding:14px 16px; border-radius:16px; background: rgba(17,24,51,.72); border:1px solid rgba(129,140,248,.16);
-  margin-bottom:10px; }
-.card .t { font-weight:700; color:#F8FAFC; }
-.card .m { color:#94A3B8; font-size:.82rem; }
-.badge { padding:3px 10px; border-radius:999px; font-size:.72rem; font-weight:700; color:#0B1020; }
-.legend { display:flex; flex-wrap:wrap; gap:14px; color:#CBD5E1; font-size:.8rem; margin:4px 0 10px; }
+  border-radius:18px; overflow:hidden; border:1px solid var(--line); background:var(--plate); }
+.card { padding:14px 16px; border-radius:16px; background:var(--plate); border:1px solid var(--line);
+  border-left:4px solid var(--c); margin-bottom:10px; }
+.card .t { font-family:'Space Grotesk',sans-serif; font-weight:600; color:var(--text); }
+.card .m { color:var(--muted); font-size:.86rem; }
+.badge { padding:3px 10px; border-radius:999px; font-size:.7rem; font-weight:700; color:white;
+  font-family:'JetBrains Mono',monospace; }
+.legend { display:flex; flex-wrap:wrap; gap:14px; color:var(--muted); font-size:.82rem; font-weight:600; margin:6px 0 10px; }
 .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
 </style>
-""", unsafe_allow_html=True)
+""".replace("VARS", _vars), unsafe_allow_html=True)
 
-PLOT = dict(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(family="Inter, sans-serif", color="#CBD5E1", size=12), margin=dict(l=10, r=10, t=36, b=10),
-            hoverlabel=dict(bgcolor="#111833", bordercolor="#818CF8", font_color="#F8FAFC"),
+PLOT = dict(template="plotly_dark" if DARK else "plotly_white", paper_bgcolor=P["plate"], plot_bgcolor=P["plate"],
+            font=dict(family="Manrope, sans-serif", color=P["muted"], size=12), margin=dict(l=14, r=14, t=40, b=12),
+            hoverlabel=dict(bgcolor=P["feat_bg"], bordercolor=P["feat_bg"], font_color=P["feat_val"]),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, bgcolor="rgba(0,0,0,0)"),
-            colorway=[CYAN, INDIGO, VIOLET, AMBER, ROSE, EMERALD])
+            colorway=[INDIGO, INK, SKY, EMERALD, GOLD, ROSE, MUTED])
 
 
 def show(fig: go.Figure, height: int = 340) -> None:
     fig.update_layout(**PLOT, height=height)
-    fig.update_xaxes(gridcolor="rgba(148,163,184,.08)", zeroline=False)
-    fig.update_yaxes(gridcolor="rgba(148,163,184,.08)", zeroline=False)
+    fig.update_xaxes(gridcolor=P["grid"], zeroline=False)
+    fig.update_yaxes(gridcolor=P["grid"], zeroline=False)
     st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
@@ -169,19 +190,18 @@ st.markdown(f"""
 <div class="hero">
   <img src="data:image/png;base64,{_b64(LOGO)}"/>
   <div>
-    <h1>SmartBike <span>AI</span> · Command Center</h1>
-    <p>Anticiper les stations vides ou saturées de Citi Bike New York — données réelles, Lakehouse Gold
-       et modèle MLflow en production.</p>
+    <h1>SMARTBIKE <span class="o">AI</span></h1>
+    <div class="tag">Anticiper les stations vides ou saturées, avant qu'elles ne le soient.</div>
+    <div class="mono">Citi Bike New York · Lakehouse Gold · modèle <b>MLflow champion</b></div>
     <span class="pill"><span class="dot"></span> Flux GBFS · {snap}</span>
-    <span class="pill">📅 {daily.date.min():%d/%m} → {daily.date.max():%d/%m/%Y}</span>
-    <span class="pill">🚲 {fmt(daily.trips.sum())} trajets analysés</span>
-    <span class="pill">🧠 Modèle champion MLflow</span>
+    <span class="pill">{daily.date.min():%d/%m} → {daily.date.max():%d/%m/%Y}</span>
+    <span class="pill dark">{fmt(daily.trips.sum())} trajets analysés</span>
   </div>
 </div>""", unsafe_allow_html=True)
 
 with st.sidebar:
     if LOGO.exists():
-        st.image(str(ROOT / "assets" / "logo_full_dark.png"), width="stretch")
+        st.image(str(ROOT / "assets" / ("logo_full_dark.png" if DARK else "logo_full.png")), width="stretch")
     st.markdown("#### Plateforme")
     st.markdown("""
 - **Azure** · ADLS Gen2 · Key Vault · Policy
@@ -198,8 +218,8 @@ with st.sidebar:
     st.markdown("---")
     st.caption("Projet CDDA 2026-2027 · Pr. Ibrahim Rahhal")
 
-tabs = st.tabs(["🏙️ Vue d'ensemble", "🚨 Interventions live", "🚚 Rééquilibrage", "🔀 Flux & zones",
-                "🌦️ Usages & météo", "🔮 Prévision", "🧠 Modèle"])
+tabs = st.tabs(["Vue d'ensemble", "Interventions live", "Rééquilibrage", "Flux & zones",
+                "Usages & météo", "Prévision", "Modèle"])
 
 # ================================================================== 1. overview
 with tabs[0]:
@@ -218,10 +238,10 @@ with tabs[0]:
     d = daily.assign(ma7=daily.trips.rolling(7, min_periods=1).mean())
     fig = go.Figure()
     fig.add_bar(x=d.date, y=d.trips, name="Trajets / jour",
-                marker=dict(color=[VIOLET if w else INDIGO for w in d.is_weekend], opacity=.55))
-    fig.add_scatter(x=d.date, y=d.ma7, name="Moyenne 7 jours", line=dict(color=CYAN, width=3, shape="spline"))
+                marker=dict(color=[SKY if w else BAR_SOFT for w in d.is_weekend]))
+    fig.add_scatter(x=d.date, y=d.ma7, name="Moyenne 7 jours", line=dict(color=INDIGO, width=3, shape="spline"))
     fig.add_scatter(x=d.date, y=d.avg_temp_c, name="Température (°C)", yaxis="y2",
-                    line=dict(color=AMBER, width=2, dash="dot"))
+                    line=dict(color=GOLD, width=2, dash="dot"))
     fig.update_layout(yaxis2=dict(overlaying="y", side="right", showgrid=False, title="°C"), bargap=.15)
     show(fig, 360)
 
@@ -233,7 +253,7 @@ with tabs[0]:
         fr = dict(zip(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]))
         piv = pat.pivot_table(index="day_name", columns="hour", values="avg_trips_per_hour").reindex(order)
         fig = go.Figure(go.Heatmap(z=piv.values, x=[f"{h}h" for h in piv.columns], y=[fr[d] for d in piv.index],
-                                   colorscale=[[0, "#0B1020"], [.35, "#312E81"], [.7, "#7C3AED"], [1, "#22D3EE"]],
+                                   colorscale=SEQ,
                                    hovertemplate="%{y} %{x}<br>%{z:,.0f} trajets/h<extra></extra>", xgap=2, ygap=2,
                                    colorbar=dict(thickness=10, outlinewidth=0)))
         fig.update_yaxes(autorange="reversed")
@@ -273,11 +293,11 @@ with tabs[1]:
             mode = st.radio("Vue", ["3D (colonnes)", "2D (points)"], horizontal=True)
             fig = go.Figure(go.Pie(labels=[RISK[k][0] for k in counts.index], values=counts.values, hole=.68,
                                    marker=dict(colors=[RISK[k][2] for k in counts.index],
-                                               line=dict(color="#070B18", width=3)),
+                                               line=dict(color="#FFFFFF", width=3)),
                                    textinfo="none", sort=False))
             fig.update_layout(showlegend=False, annotations=[dict(text=f"<b>{(prio.risk == 'ok').mean() * 100:.0f}%</b>"
                                                                        "<br>OK", showarrow=False,
-                                                                  font=dict(size=22, color="#F8FAFC"))])
+                                                                  font=dict(size=22, color=P["text"]))])
             show(fig, 230)
         with c1:
             sel = prio[prio.risk.isin(risks)].copy()
@@ -287,17 +307,18 @@ with tabs[1]:
             sel["fill_pct"] = (sel.fill_ratio_now * 100).round(0)
             tip = {"html": "<b>{station_name}</b><br/>🚲 {num_bikes_available} vélos · 🅿️ {num_docks_available} places"
                            "<br/>Remplissage {fill_pct} %<br/><b>{label}</b> → {action} ({bikes_to_move})",
-                   "style": {"backgroundColor": "#111833", "color": "#F8FAFC", "borderRadius": "10px"}}
+                   "style": {"backgroundColor": P["feat_bg"], "color": P["feat_val"], "borderRadius": "10px",
+                             "fontFamily": "Manrope, sans-serif"}}
             if mode.startswith("3D"):
                 layer = pdk.Layer("ColumnLayer", sel, get_position=["lon", "lat"], get_elevation="elev",
                                   elevation_scale=22, radius=55, get_fill_color="color", pickable=True, extruded=True,
                                   auto_highlight=True)
             else:
                 layer = pdk.Layer("ScatterplotLayer", sel, get_position=["lon", "lat"], get_fill_color="color",
-                                  get_radius="40 + elev * 6", pickable=True, stroked=True, get_line_color=[7, 11, 24],
+                                  get_radius="40 + elev * 6", pickable=True, stroked=True, get_line_color=[255, 255, 255],
                                   line_width_min_pixels=1, auto_highlight=True)
             glow = pdk.Layer("ScatterplotLayer", prio[prio.risk == "ok"], get_position=["lon", "lat"],
-                             get_fill_color=[52, 211, 153, 50], get_radius=35)
+                             get_fill_color=[34, 197, 94, 55], get_radius=35)
             deck([glow, layer], tooltip=tip)
             st.markdown('<div class="legend">' + "".join(
                 f'<span><i style="background:{RISK[k][2]}"></i>{RISK[k][0]}</span>' for k in RISK) +
@@ -345,13 +366,13 @@ with tabs[2]:
                     "la capacité, un camion est indispensable.")
             fig = go.Figure()
             fig.add_scatter(x=rd.date, y=rd.forced_moves, fill="tozeroy", name="Vélos à déplacer",
-                            line=dict(color=CYAN, width=2.5), fillcolor="rgba(34,211,238,.15)")
+                            line=dict(color=INDIGO, width=2.5), fillcolor="rgba(37,99,235,.10)")
             fig.add_scatter(x=rd.date, y=rd.forced_moves.rolling(7, min_periods=1).mean(), name="Moyenne 7 j",
-                            line=dict(color=AMBER, width=2, dash="dot"))
+                            line=dict(color=INK, width=2, dash="dot"))
             show(fig, 360)
         with c2:
             section("Rôle des stations le matin", "Source = se vide (départs domicile) · puits = se remplit (bureaux).")
-            colors = {"source le matin (se vide)": [251, 191, 36, 220], "puits le matin (se remplit)": [192, 132, 252, 220],
+            colors = {"source le matin (se vide)": [201, 165, 74, 220], "puits le matin (se remplit)": [37, 99, 235, 220],
                       "equilibree": [148, 163, 184, 60]}
             pr = prof.dropna(subset=["lat", "lon"]).copy()
             pr["color"] = pr.station_role.map(colors)
@@ -381,13 +402,13 @@ with tabs[3]:
     else:
         c1, c2 = st.columns(2)
         with c1:
-            section("Grands flux origine → destination", "Épaisseur = nombre de trajets · bleu = départ, orange = arrivée.")
+            section("Grands flux origine → destination", "Épaisseur = trajets · bleu ciel = départ, bleu nuit = arrivée.")
             od = t("gold_od_flows").sort_values("trips", ascending=False)
             n = st.slider("Nombre de liaisons", 20, 400, 150, step=10)
             top = od.head(n).dropna(subset=["origin_lat", "dest_lat"])
             deck([pdk.Layer("ArcLayer", top, get_source_position=["origin_lon", "origin_lat"],
-                            get_target_position=["dest_lon", "dest_lat"], get_source_color=[34, 211, 238, 200],
-                            get_target_color=[251, 191, 36, 220], get_width="trips / 250", get_height=0.6,
+                            get_target_position=["dest_lon", "dest_lat"], get_source_color=[141, 220, 255, 230],
+                            get_target_color=INK_RGB + [230], get_width="trips / 250", get_height=0.6,
                             pickable=True, auto_highlight=True)],
                  tooltip={"text": "{origin_name} → {destination_name}\n{trips} trajets · {median_duration_min} min"})
         with c2:
@@ -400,7 +421,8 @@ with tabs[3]:
             cap_v = max(zh.avg_departures_per_day.quantile(.97), 1)
             zh["elev"] = zh.avg_departures_per_day.clip(upper=cap_v)
             q = (zh.elev / cap_v).fillna(0)
-            zh["color"] = [[int(34 + 217 * v), int(211 - 120 * v), int(238 - 100 * v), 215] for v in q]
+            lo, hi = ([29, 63, 168], [141, 220, 255]) if DARK else ([141, 220, 255], [11, 16, 32])
+            zh["color"] = [[int(lo[k] + (hi[k] - lo[k]) * v) for k in range(3)] + [225] for v in q]
             deck([pdk.Layer("ColumnLayer", zh, get_position=["cell_lon", "cell_lat"], get_elevation="elev",
                             elevation_scale=10, radius=380, get_fill_color="color", pickable=True, extruded=True,
                             auto_highlight=True, coverage=.9)],
@@ -431,10 +453,10 @@ with tabs[4]:
                 .fillna(base.rideable_type)
             base["member_casual"] = base.member_casual.map({"member": "abonné", "casual": "occasionnel"})
             fig = px.sunburst(base, path=["day_type", "daypart", "member_casual", "rideable_type"], values="trips",
-                              color="day_type", color_discrete_map={"semaine": INDIGO, "week-end": VIOLET})
+                              color="day_type", color_discrete_map={"semaine": INDIGO, "week-end": INK})
             fig.update_traces(insidetextorientation="radial", hovertemplate="%{label}<br>%{value:,.0f} trajets"
                                                                             "<br>%{percentRoot:.1%} du total<extra></extra>",
-                              marker=dict(line=dict(color="#070B18", width=1.5)))
+                              marker=dict(line=dict(color="#FFFFFF", width=2)))
             show(fig, 460)
     with c2:
         section("Effet de la météo", "Trajets moyens par heure (journée 7h-19h, semaine) selon la pluie et la température.")
@@ -444,8 +466,8 @@ with tabs[4]:
             piv = sub.pivot_table(index="rain_bucket", columns="temp_bucket", values="avg_trips_per_hour")
             fig = go.Figure(go.Heatmap(z=piv.values, x=[c[3:] for c in piv.columns], y=[r[3:] for r in piv.index],
                                        text=[[f"{v:,.0f}" if pd.notna(v) else "" for v in row] for row in piv.values],
-                                       texttemplate="%{text}", textfont=dict(size=15, color="white"),
-                                       colorscale=[[0, "#1E1B4B"], [.5, "#6D28D9"], [1, "#22D3EE"]], xgap=4, ygap=4,
+                                       texttemplate="%{text}", textfont=dict(size=15, color=HEAT_TEXT),
+                                       colorscale=SEQ_STRONG, xgap=4, ygap=4,
                                        colorbar=dict(thickness=10, outlinewidth=0)))
             fig.update_yaxes(autorange="reversed")
             show(fig, 260)
@@ -455,14 +477,14 @@ with tabs[4]:
             dd["bucket"] = dd.duration_bucket.str[4:]
             dd["profil"] = dd.member_casual.map({"member": "Abonnés", "casual": "Occasionnels"})
             fig = px.bar(dd, x="bucket", y="pct_of_user_type", color="profil", barmode="group",
-                         color_discrete_map={"Abonnés": CYAN, "Occasionnels": VIOLET},
+                         color_discrete_map={"Abonnés": INDIGO, "Occasionnels": SKY},
                          labels={"bucket": "", "pct_of_user_type": "% des trajets", "profil": ""})
             show(fig, 260)
     section("Les stations les plus imprévisibles", "Coefficient de variation de la demande horaire (écart-type / moyenne).")
     if has("gold_station_volatility"):
         vol = t("gold_station_volatility").dropna(subset=["lat"])
         fig = px.scatter(vol, x="mean_dep_h", y="p99_dep_h", color="coef_variation", size="capacity",
-                         hover_name="station_name", color_continuous_scale=["#22D3EE", "#818CF8", "#C084FC", "#FB7185"],
+                         hover_name="station_name", color_continuous_scale=["#8DDCFF", "#2563EB", INK, "#E5484D"],
                          labels={"mean_dep_h": "Départs moyens / heure", "p99_dep_h": "Pic (99e percentile)",
                                  "coef_variation": "Variabilité"}, log_x=True, size_max=14, opacity=.75)
         show(fig, 380)
@@ -474,11 +496,11 @@ with tabs[5]:
         .sort_values("departures", ascending=False)
     labels = (stations.station_name + "  ·  " + stations.station_id).tolist()
     c0, c1, c2, c3 = st.columns([2.2, 1, 1, 1])
-    choice = c0.selectbox("📍 Station", labels)
+    choice = c0.selectbox("Station", labels)
     row = stations.iloc[labels.index(choice)]
-    day = c1.date_input("📅 Jour", pd.Timestamp.now().date())
-    temp = c2.slider("🌡️ Température (°C)", -10, 38, 18)
-    rain = c3.slider("🌧️ Pluie (mm/h)", 0.0, 15.0, 0.0, 0.5)
+    day = c1.date_input("Jour", pd.Timestamp.now().date())
+    temp = c2.slider("Température (°C)", -10, 38, 18)
+    rain = c3.slider("Pluie (mm/h)", 0.0, 15.0, 0.0, 0.5)
 
     rows = [common.predict(row.station_id, pd.Timestamp(day) + pd.Timedelta(hours=h),
                            {"temperature_c": temp, "precipitation_mm": rain}) for h in range(24)]
@@ -495,11 +517,11 @@ with tabs[5]:
           ("🏗️", "Capacité", fmt(cap), "bornes", EMERALD)])
 
     fig = go.Figure()
-    fig.add_bar(x=fc.heure, y=fc.pred_departures, name="Départs", marker_color=CYAN, opacity=.9)
-    fig.add_bar(x=fc.heure, y=fc.pred_arrivals, name="Arrivées", marker_color=VIOLET, opacity=.9)
+    fig.add_bar(x=fc.heure, y=fc.pred_departures, name="Départs", marker_color=INDIGO)
+    fig.add_bar(x=fc.heure, y=fc.pred_arrivals, name="Arrivées", marker_color=SKY)
     fig.add_scatter(x=fc.heure, y=cum, name="Stock relatif cumulé", yaxis="y2", mode="lines+markers",
-                    line=dict(color=AMBER, width=3, shape="spline"), marker=dict(size=6))
-    fig.add_hline(y=0, line=dict(color="rgba(251,191,36,.35)", dash="dot"), yref="y2")
+                    line=dict(color=INK, width=3, shape="spline"), marker=dict(size=6))
+    fig.add_hline(y=0, line=dict(color=P["muted"], dash="dot"), yref="y2")
     fig.update_layout(barmode="group", bargap=.25, xaxis=dict(dtick=1, ticksuffix="h", range=[-.6, 23.6]),
                       yaxis=dict(title="vélos / heure"),
                       yaxis2=dict(overlaying="y", side="right", showgrid=False, title="stock relatif"))
@@ -526,10 +548,10 @@ with tabs[6]:
         net = f.groupby("hour_ts")[["departures", "pred_departures", "baseline_departures"]].sum().reset_index()
         fig = go.Figure()
         fig.add_scatter(x=net.hour_ts, y=net.departures, name="Observé", fill="tozeroy",
-                        line=dict(color="rgba(148,163,184,.9)", width=1.5), fillcolor="rgba(148,163,184,.12)")
-        fig.add_scatter(x=net.hour_ts, y=net.baseline_departures, name="Baseline", line=dict(color=AMBER, width=1.5,
+                        line=dict(color="#94A3B8", width=1.5), fillcolor="rgba(141,220,255,.25)")
+        fig.add_scatter(x=net.hour_ts, y=net.baseline_departures, name="Baseline", line=dict(color=GOLD, width=1.5,
                                                                                                dash="dot"))
-        fig.add_scatter(x=net.hour_ts, y=net.pred_departures, name="Modèle ML", line=dict(color=CYAN, width=2.5))
+        fig.add_scatter(x=net.hour_ts, y=net.pred_departures, name="Modèle ML", line=dict(color=INDIGO, width=2.5))
         show(fig, 380)
     with c2:
         section("Modèle vs baseline", "Plus bas = meilleur.")
@@ -537,7 +559,7 @@ with tabs[6]:
                              "type": ["Baseline", "Modèle", "Baseline", "Modèle"],
                              "MAE": [dep.baseline_mae, dep.model_mae, arr.baseline_mae, arr.model_mae]})
         fig = px.bar(comp, x="cible", y="MAE", color="type", barmode="group", text_auto=".3f",
-                     color_discrete_map={"Baseline": "#475569", "Modèle": CYAN}, labels={"cible": "", "type": ""})
+                     color_discrete_map={"Baseline": BAR_SOFT, "Modèle": INDIGO}, labels={"cible": "", "type": ""})
         fig.update_yaxes(range=[comp.MAE.min() * .9, comp.MAE.max() * 1.04])
         show(fig, 380)
     if has("gold_model_promotion_log"):
@@ -549,7 +571,8 @@ with tabs[6]:
             name = "Départs" if "departures" in r.model else "Arrivées"
             badge = (f'<span class="badge" style="background:{EMERALD}">PROMU ✓</span>' if ok
                      else f'<span class="badge" style="background:{ROSE}">REJETÉ ✗</span>')
-            col.markdown(f"""<div class="card"><div class="t">{name} · challenger v{int(r.challenger_version)} {badge}</div>
+            col.markdown(f"""<div class="card" style="--c:{EMERALD if ok else ROSE}">
+              <div class="t">{name} · challenger v{int(r.challenger_version)} {badge}</div>
               <div class="m">MAE challenger <b>{r.challenger_mae:.4f}</b> · champion v{int(r.champion_version_before)}
               <b>{r.champion_mae_before:.4f}</b> · baseline {r.baseline_mae:.4f}<br/>
               {'Le challenger devient le nouveau champion.' if ok else 'Le champion actuel reste en production.'}

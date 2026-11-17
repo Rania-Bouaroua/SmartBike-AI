@@ -1,10 +1,19 @@
+# Light and dark themes (palette of the team portfolio). The viewer switches with menu ⋮ > Settings,
+# or Streamlit follows the OS preference; app/dashboard.py reads st.context.theme to adapt charts and maps.
 [theme]
-base = "dark"
-primaryColor = "#818CF8"
-backgroundColor = "#070B18"
-secondaryBackgroundColor = "#111833"
-textColor = "#E2E8F0"
 font = "sans serif"
+
+[theme.light]
+primaryColor = "#2563EB"
+backgroundColor = "#F8FAFC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0B1020"
+
+[theme.dark]
+primaryColor = "#8DDCFF"
+backgroundColor = "#080B12"
+secondaryBackgroundColor = "#111827"
+textColor = "#F8FAFC"
 
 [browser]
 gatherUsageStats = false
