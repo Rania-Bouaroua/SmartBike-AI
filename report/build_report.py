@@ -145,8 +145,10 @@ def render_md(path: pathlib.Path, shift: int = 1, skip_title: bool = True, drop_
         if m:
             flush_table()
             level, title = len(m.group(1)), m.group(2).strip()
+            if skip_title and level == 1:      # document title: keep the preamble state unchanged
+                continue
             skipping = any(title.lower().startswith(d.lower()) for d in drop_sections)
-            if skipping or (skip_title and level == 1):
+            if skipping:
                 continue
             doc.add_heading(re.sub(r"[*`]", "", title), level=min(level + shift - 1, 4))
             continue

@@ -112,7 +112,18 @@ def save_table(df: DataFrame, name: str) -> None:
             import pyarrow as pa
             yield pa.RecordBatch.from_pydict({"done": pa.array([1], pa.int32())})   # always answer (empty partitions too)
 
-        df.mapInArrow(_write_partition, "done int").collect()
+        try:
+            df.mapInArrow(_write_partition, "done int").collect()
+        except Exception as exc:  # noqa: BLE001
+            # Local Windows Python workers occasionally crash on tiny unioned frames: a small table is then
+            # written from the driver instead (big tables re-raise: they must not be collected).
+            if df.limit(1_000_001).count() > 1_000_000:
+                raise
+            print(f"[warn] distributed write of {name} failed ({type(exc).__name__}) -> driver write")
+            import pyarrow.parquet as pq
+            shutil.rmtree(target, ignore_errors=True)
+            target.mkdir(parents=True)
+            pq.write_table(df.toArrow(), f"{out}/part-driver.parquet")
         if not any(target.iterdir()):          # empty table: keep the schema with an empty file
             import pyarrow.parquet as pq
             pq.write_table(df.limit(0).toArrow(), f"{out}/part-empty.parquet")
