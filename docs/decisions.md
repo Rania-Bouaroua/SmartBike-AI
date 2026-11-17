@@ -10,7 +10,7 @@ pour les variables du modèle) : impossible à tester, risque de divergence entr
 l'API, l'application et le backtest. Dans Fabric, il est publié comme *wheel* dans l'Environment des notebooks.
 **Écarté.** Garder la logique dans les notebooks (non testable) ; un micro-service de scoring (latence + exploitation
 sans bénéfice à cette échelle).
-**Preuve.** 41 tests, dont un test de parité exact de la simulation (ci-dessous) ; même prédiction via registre MLflow et via
+**Preuve.** 38 tests, dont un test de parité exact de la simulation (ci-dessous) ; même prédiction via registre MLflow et via
 l'image Docker.
 
 ## ADR-02 · Risque **probabiliste** plutôt que projection ponctuelle

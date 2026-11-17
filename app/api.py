@@ -94,7 +94,7 @@ class Prediction(BaseModel):
 
 # ------------------------------------------------------------------ endpoints
 @app.get("/health", response_model=Health)
-def health() -> dict:
+async def health() -> dict:
     """Liveness: cheap, no table read."""
     return {"status": "ok", "tables": common.available_tables()}
 

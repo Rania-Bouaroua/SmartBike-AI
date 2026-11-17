@@ -781,7 +781,7 @@ with tabs[7]:
               </div></div>""", unsafe_allow_html=True)
 
     section("Fiabilité des alertes (backtest sur l'historique réel)",
-            "Quand le système annonce « vide / pleine dans 2 h », avait-il raison ? Vérité terrain = flux GBFS "
+            "Quand le système annonce « vide / pleine bientôt », avait-il raison ? Vérité terrain = flux GBFS "
             "enregistré toutes les 5 min ; stations déjà en rupture exclues ; seuil choisi sur la 1re moitié.")
     if not has("gold_alert_backtest"):
         st.info("Pas encore de backtest : `python scripts/gbfs_history.py` (≥ 3 h) puis "
@@ -797,11 +797,12 @@ with tabs[7]:
             fig = px.bar(long, x="mesure", y="value", color="methode", barmode="group", text_auto=".0%",
                          color_discrete_map={names["naive"]: BAR_SOFT, names["point"]: SKY,
                                              names["probabilistic"]: INDIGO},
-                         labels={"mesure": "", "value": "", "methode": ""}, title=title)
+                         labels={"mesure": "", "value": "", "methode": ""})
             fig.update_yaxes(range=[0, 1], tickformat=".0%")
             with col:
-                show(fig, 330)
                 r = b.set_index("method").loc["probabilistic"]
-                st.caption(f"{int(r.n):,} fenêtres station × 2 h sur {int(r.origins_test)} instants de test · "
+                st.markdown(f"**{title} à {int(r.horizon_h)} h**")
+                show(fig, 330)
+                st.caption(f"{int(r.n):,} fenêtres station × {int(r.horizon_h)} h sur {int(r.origins_test)} instants de test · "
                            f"prévalence {r.prevalence:.1%} · seuil P ≥ {r.p_threshold:.2f}"
                            + (" · ⚠ historique court : seuil réglé et testé sur la même période" if r.same_period else ""))
