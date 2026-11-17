@@ -76,8 +76,9 @@ def origins(snap_times: pd.Series, horizon: pd.Timedelta, every: pd.Timedelta) -
         window = times[(times > t0) & (times <= t0 + horizon)]
         if window.empty or window.iloc[-1] < t0 + horizon - MAX_GAP:
             continue
-        gaps = np.diff(np.r_[t0.value, window.astype("int64").to_numpy()])
-        if gaps.max() > MAX_GAP.value:
+        # compare Timedeltas, not raw integers: pandas 3 stores datetimes in us by default, Timestamp.value is ns
+        gaps = pd.concat([pd.Series([window.iloc[0] - t0]), window.diff().dropna()])
+        if gaps.max() > MAX_GAP:
             continue
         out.append(t0)
         last = t0
