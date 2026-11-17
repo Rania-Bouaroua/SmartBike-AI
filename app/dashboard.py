@@ -10,6 +10,7 @@ import base64
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -192,8 +193,13 @@ def deck(layers: list, view: pdk.ViewState = NYC, tooltip: dict | None = None, h
 
 
 @st.cache_data
-def t(name: str) -> pd.DataFrame:
+def _t(name: str, version: float) -> pd.DataFrame:
     return common.table(name).copy()
+
+
+def t(name: str) -> pd.DataFrame:
+    """Cached per table *version*: a notebook re-run shows up on the next page refresh, no restart needed."""
+    return _t(name, common.table_version(name))
 
 
 def has(name: str) -> bool:
@@ -235,6 +241,10 @@ def sidebar_operator_panel(prio: pd.DataFrame | None) -> None:
     snap_ts = pd.Timestamp(prio.snapshot_time_local.iloc[0])
     snap_ts = snap_ts.tz_convert(common.NY_TZ) if snap_ts.tzinfo else snap_ts.tz_localize(common.NY_TZ)
     age = now - snap_ts
+    if age < pd.Timedelta(minutes=-5):   # a snapshot "from the future" means this computer's clock is late
+        st.warning(f"L'horloge de cet ordinateur retarde d'environ {round(-age.total_seconds() / 3600, 1)} h : "
+                   "l'âge du relevé ne peut pas être calculé. Synchroniser l'heure de Windows.")
+        age = pd.Timedelta(0)
     fresh = age <= pd.Timedelta(minutes=FRESH_MIN)
     st.markdown(f'<div class="sb-fresh {"ok" if fresh else "old"}"><span class="sb-dot"></span>'
                 f'<b>{snap_ts:%d/%m %H:%M}</b> (New York) · {ago(age)}<br/>'
@@ -273,11 +283,11 @@ def sidebar_operator_panel(prio: pd.DataFrame | None) -> None:
     # 4. today's truck need, from the historical rebalancing table (same weekday)
     if has("gold_rebalancing_daily"):
         rd = t("gold_rebalancing_daily")
-        dow = pd.to_datetime(rd.date).dt.dayofweek
-        same = rd[dow == now.dayofweek]
+        dow = pd.to_datetime(rd.date).dt.day_of_week
+        same = rd[dow == now.day_of_week]
         if not same.empty:
             st.markdown('<div class="sb-h">Camion aujourd\'hui</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="sb-note">Un <b>{FR_DAYS[now.dayofweek]}</b>, il faut en moyenne '
+            st.markdown(f'<div class="sb-note">Un <b>{FR_DAYS[now.day_of_week]}</b>, il faut en moyenne '
                         f'<b>{fmt(same.forced_moves.mean())} vélos</b> à déplacer sur '
                         f'<b>{fmt(same.stations_needing_truck.mean())} stations</b> '
                         f'(max observé {fmt(same.forced_moves.max())}).</div>', unsafe_allow_html=True)
@@ -336,7 +346,7 @@ with st.sidebar:
         st.image(str(ROOT / "assets" / ("logo_full_dark.png" if DARK else "logo_full.png")), width="stretch")
     sidebar_operator_panel(prio)
 
-tabs = st.tabs(["Vue d'ensemble", "Interventions live", "Rééquilibrage", "Flux & zones",
+tabs = st.tabs(["Vue d'ensemble", "Interventions live", "Tournée camion", "Rééquilibrage", "Flux & zones",
                 "Usages & météo", "Prévision", "Modèle"])
 
 # ================================================================== 1. overview
@@ -459,8 +469,77 @@ with tabs[1]:
                 "pred_departures": st.column_config.NumberColumn("Départs prévus", format="%.1f"),
                 "pred_arrivals": st.column_config.NumberColumn("Arrivées prévues", format="%.1f")})
 
-# ================================================================== 3. rebalancing
+# ================================================================== 2b. truck tours (routing)
+TRUCK_RGB = [[37, 99, 235], [201, 165, 74], [34, 197, 94], [229, 72, 77], [141, 220, 255], [148, 163, 184]]
+
+
+@st.cache_data(show_spinner="Optimisation de la tournée (OR-Tools)…")
+def plan_tours(prio_key: str, n_trucks: int, capacity: int, shift: int, top_n: int):
+    from smartbike.routing import FleetConfig, candidates_from_priority, greedy_plan, optimise_plan
+    cfg = FleetConfig(n_trucks=n_trucks, truck_capacity=capacity, shift_minutes=shift, time_limit_s=8)
+    cand = candidates_from_priority(prio, top_n=top_n)
+    g, kg = greedy_plan(cand, cfg)
+    o, ko = optimise_plan(cand, cfg)
+    return o, pd.DataFrame([kg, ko])
+
+
 with tabs[2]:
+    if prio is None:
+        st.warning("Lancer le notebook 04.")
+    else:
+        section("Tournée optimisée des camions",
+                "Quelles stations, dans quel ordre, combien de vélos charger / décharger : problème de collecte et "
+                "livraison avec capacité, résolu par OR-Tools, comparé à « suivre la liste de priorité ».")
+        c1, c2, c3, c4 = st.columns(4)
+        n_trucks = c1.slider("Camions", 1, 6, 3)
+        capacity = c2.slider("Capacité (vélos)", 10, 60, 30, step=5)
+        shift = c3.slider("Durée de tournée (min)", 60, 480, 240, step=30)
+        top_n = c4.slider("Stations candidates", 20, 150, 80, step=10)
+        plan, comp = plan_tours(snap, n_trucks, capacity, shift, top_n)
+        g, o = comp.iloc[0], comp.iloc[1]
+        gain = (o.bikes_moved / g.bikes_moved - 1) * 100 if g.bikes_moved else 0
+        kpis([("🚚", "Vélos déplacés", fmt(o.bikes_moved), f"{gain:+.0f} % vs liste de priorité", INDIGO),
+              ("🎯", "Urgence couverte", f"{o.value_share:.0%}", f"liste de priorité : {g.value_share:.0%}", EMERALD),
+              ("🛣️", "Distance", f"{o.km:.0f} km", f"liste de priorité : {g.km:.0f} km", GOLD),
+              ("⚡", "Vélos / km", f"{o.bikes_per_km:.1f}", f"liste de priorité : {g.bikes_per_km:.1f}", SKY),
+              ("📍", "Arrêts", fmt(o.stops), f"sur {fmt(o.candidates)} candidates", ROSE)])
+        left, right = st.columns([3, 2])
+        with left:
+            paths, pts = [], []
+            for truck, r in plan.groupby("truck"):
+                color = TRUCK_RGB[(truck - 1) % len(TRUCK_RGB)]
+                paths.append({"truck": f"Camion {truck}", "path": r[["lon", "lat"]].to_numpy().tolist(),
+                              "color": color})
+                for _, x in r.iterrows():
+                    pts.append({"lon": x.lon, "lat": x.lat, "color": color + [235], "label": f"{truck}.{x.stop}",
+                                "txt": f"Camion {truck} · arrêt {x.stop}\n{x.station_name}\n"
+                                       f"{'livrer' if x.delta > 0 else 'retirer'} {abs(int(x.delta))} vélos · "
+                                       f"charge après : {int(x.load_after)}"})
+            pts = pd.DataFrame(pts)
+            deck([pdk.Layer("PathLayer", pd.DataFrame(paths), get_path="path", get_color="color", width_scale=1,
+                            width_min_pixels=4, rounded=True, pickable=False),
+                  pdk.Layer("ScatterplotLayer", pts, get_position=["lon", "lat"], get_fill_color="color",
+                            get_radius=90, stroked=True, get_line_color=[255, 255, 255], line_width_min_pixels=2,
+                            pickable=True),
+                  pdk.Layer("TextLayer", pts, get_position=["lon", "lat"], get_text="label", get_size=12,
+                            get_color=[255, 255, 255] if DARK else [11, 16, 32], get_pixel_offset=[0, -16])],
+                 view=pdk.ViewState(latitude=float(plan.lat.mean()), longitude=float(plan.lon.mean()), zoom=11.6,
+                                    pitch=0), tooltip={"text": "{txt}"}, height=560)
+        with right:
+            truck = st.selectbox("Feuille de route", sorted(plan.truck.unique()), format_func=lambda k: f"Camion {k}")
+            r = plan[plan.truck == truck]
+            st.dataframe(r.assign(action=np.where(r.delta > 0, "livrer", "retirer"), velos=r.delta.abs())[
+                ["stop", "station_name", "action", "velos", "load_after", "minutes_cum", "leg_km"]],
+                hide_index=True, width="stretch", height=480, column_config={
+                    "stop": "#", "station_name": st.column_config.TextColumn("Station", width="large"),
+                    "action": "Action", "velos": "Vélos", "load_after": "Charge",
+                    "minutes_cum": st.column_config.NumberColumn("Minute", format="%.0f"),
+                    "leg_km": st.column_config.NumberColumn("km", format="%.1f")})
+        st.caption("Hypothèses : camions partis vides, 15 km/h, 4 min par arrêt + 15 s par vélo, distance réelle ≈ "
+                   "1,3 × vol d'oiseau. Une station est visitée au plus une fois (besoin plafonné à la capacité).")
+
+# ================================================================== 3. rebalancing
+with tabs[3]:
     if not has("gold_rebalancing_daily"):
         st.info("Lancer le notebook 05 (agrégations avancées).")
     else:
@@ -514,7 +593,7 @@ with tabs[2]:
                          "heure_min": st.column_config.NumberColumn("Heure du stock min.", format="%d h")})
 
 # ================================================================== 4. flows & zones
-with tabs[3]:
+with tabs[4]:
     if not has("gold_od_flows"):
         st.info("Lancer le notebook 05 (agrégations avancées).")
     else:
@@ -560,7 +639,7 @@ with tabs[3]:
                          "am_peak_pct": st.column_config.NumberColumn("Pointe matin", format="%.0f %%")})
 
 # ================================================================== 5. usage & weather (cube, distributions)
-with tabs[4]:
+with tabs[5]:
     c1, c2 = st.columns(2)
     with c1:
         section("Qui roule, quand, sur quoi ?", "Cube OLAP (CUBE + grouping_id) : type de jour → moment → profil → vélo.")
@@ -608,7 +687,7 @@ with tabs[4]:
         show(fig, 380)
 
 # ================================================================== 6. what-if forecast
-with tabs[5]:
+with tabs[6]:
     stations = t("silver_stations").dropna(subset=["capacity"])
     stations = stations.merge(t("gold_station_profile")[["station_id", "departures"]], on="station_id") \
         .sort_values("departures", ascending=False)
@@ -648,7 +727,7 @@ with tabs[5]:
                "chuter.")
 
 # ================================================================== 7. model
-with tabs[6]:
+with tabs[7]:
     m = t("gold_ml_metrics").set_index("target")
     dep, arr = m.loc["departures"], m.loc["arrivals"]
     kpis([("🎯", "MAE départs", f"{dep.model_mae:.3f}", f"baseline {dep.baseline_mae:.3f} · −{dep.mae_improvement_pct:.1f} %",

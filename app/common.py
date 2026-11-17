@@ -12,18 +12,33 @@ import pathlib
 import numpy as np
 import pandas as pd
 
+from smartbike.features import build_feature_grid
+
 ROOT = pathlib.Path(os.environ.get("SMARTBIKE_ROOT", pathlib.Path(__file__).resolve().parents[1]))
 TABLES = ROOT / "data" / "lakehouse" / "Tables"
 MODEL_NAME = "smartbike_demand_model"
 NY_TZ = "America/New_York"
 
 
-@functools.lru_cache(maxsize=32)
-def table(name: str, columns: tuple[str, ...] | None = None) -> pd.DataFrame:
+def table_version(name: str) -> float:
+    """Last modification time of a table's files: changes whenever a notebook rewrites the table."""
     path = TABLES / name
     if not path.exists():
         raise FileNotFoundError(f"table {name} not found in {TABLES} - run the notebooks first")
-    return pd.read_parquet(path, columns=list(columns) if columns else None)
+    return max((f.stat().st_mtime for f in path.rglob("*.parquet")), default=path.stat().st_mtime)
+
+
+@functools.lru_cache(maxsize=64)
+def _read_table(name: str, columns: tuple[str, ...] | None, version: float) -> pd.DataFrame:
+    return pd.read_parquet(TABLES / name, columns=list(columns) if columns else None)
+
+
+def table(name: str, columns: tuple[str, ...] | None = None) -> pd.DataFrame:
+    """Read a Gold/Silver table; cached, but re-read as soon as the pipeline rewrites it (long-running API/app)."""
+    return _read_table(name, columns, table_version(name))
+
+
+table.cache_clear = _read_table.cache_clear  # type: ignore[attr-defined]  (tests reset the cache)
 
 
 GBFS_STATUS_URL = "https://gbfs.citibikenyc.com/gbfs/en/station_status.json"
@@ -69,35 +84,41 @@ def model(target: str):
 
 
 def build_features(station_id: str, hour_ts: pd.Timestamp, weather: dict) -> pd.DataFrame:
-    """Same features as training (notebook 03) for one station and one local hour."""
+    """Model features for one station and one local hour (thin wrapper over smartbike.features)."""
     st = table("silver_stations")
     row = st[st.station_id == station_id]
     if row.empty:
         raise KeyError(station_id)
-    row = row.iloc[0]
-    hour_ts = pd.Timestamp(hour_ts).floor("h")
-    dow = (hour_ts.day_of_week + 1) % 7 + 1          # Spark convention: 1 = Sunday ... 7 = Saturday
-    is_weekend = int(dow in (1, 7))
-    f = {"station_id": station_id, "hour": hour_ts.hour, "dow": dow, "is_weekend": is_weekend,
-         "temperature_c": weather.get("temperature_c", 15.0), "precipitation_mm": weather.get("precipitation_mm", 0.0),
-         "wind_kmh": weather.get("wind_kmh", 10.0), "humidity_pct": weather.get("humidity_pct", 60.0),
-         "capacity": float(row.capacity) if pd.notna(row.capacity) else 0.0, "lat": row.lat, "lon": row.lon}
-    frame = pd.DataFrame([f])
-    enc = table("gold_station_hour_encoding")
-    enc_st = table("gold_station_encoding")
-    frame = frame.merge(enc, on=["station_id", "hour", "is_weekend"], how="left").merge(enc_st, on="station_id",
-                                                                                       how="left")
-    enc_cols = [c for c in frame.columns if c.startswith("enc_")]
-    frame[enc_cols] = frame[enc_cols].fillna(0.0)
-    return frame
+    hours = pd.DataFrame([{"hour_ts": pd.Timestamp(hour_ts), **weather}])
+    return build_feature_grid(row[["station_id", "capacity", "lat", "lon"]], hours,
+                              table("gold_station_hour_encoding"), table("gold_station_encoding"))
+
+
+def score(grid: pd.DataFrame) -> pd.DataFrame:
+    """Add pred_departures / pred_arrivals (champion models, clipped at 0) to a feature grid."""
+    out = grid.copy()
+    for target in ("departures", "arrivals"):
+        m, _ = model(target)
+        out[f"pred_{target}"] = np.clip(m.predict(out[list(m.feature_names_in_)]), 0, None)
+    return out
+
+
+def hourly_rates(stations: pd.DataFrame, hours: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Expected departures / arrivals per station (rows, in `stations` order) and hour (columns, in `hours` order)."""
+    grid = score(build_feature_grid(stations[["station_id", "capacity", "lat", "lon"]], hours,
+                                    table("gold_station_hour_encoding"), table("gold_station_encoding")))
+    order = pd.to_datetime(hours["hour_ts"]).dt.floor("h").tolist()
+    dep = grid.pivot_table(index="station_id", columns="hour_ts", values="pred_departures", aggfunc="first")
+    arr = grid.pivot_table(index="station_id", columns="hour_ts", values="pred_arrivals", aggfunc="first")
+    ids = stations["station_id"].tolist()
+    return dep.loc[ids, order].to_numpy(), arr.loc[ids, order].to_numpy()
 
 
 def predict(station_id: str, hour_ts: pd.Timestamp, weather: dict | None = None) -> dict:
-    frame = build_features(station_id, hour_ts, weather or {})
+    frame = score(build_features(station_id, hour_ts, weather or {}))
     out = {"station_id": station_id, "hour_local": str(pd.Timestamp(hour_ts).floor("h"))}
     for target in ("departures", "arrivals"):
-        m, uri = model(target)
-        out[f"pred_{target}"] = round(float(np.clip(m.predict(frame[list(m.feature_names_in_)]), 0, None)[0]), 2)
-        out[f"model_{target}"] = uri
+        out[f"pred_{target}"] = round(float(frame[f"pred_{target}"].iloc[0]), 2)
+        out[f"model_{target}"] = model(target)[1]
     out["pred_net_flow"] = round(out["pred_arrivals"] - out["pred_departures"], 2)
     return out

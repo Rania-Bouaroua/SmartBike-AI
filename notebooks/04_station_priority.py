@@ -6,8 +6,9 @@
 #
 #     projected_bikes = bikes_available - predicted_departures + predicted_arrivals
 #
-# A station is flagged **"risque vide"** if projected bikes fall to <= max(2, 10 % capacity),
-# **"risque saturee"** if projected free docks fall to <= max(2, 10 % capacity).
+# Two alert methods (package `smartbike.risk`, compared by scripts/backtest_alerts.py):
+# * point: "risque vide" if projected bikes <= max(2, 10 % capacity) (same for free docks);
+# * probabilistic (default): P(stock hits 0 / capacity within the horizon) >= 0.5, Monte Carlo on Poisson demand.
 # The output `gold_station_priority` feeds the Power BI page "Interventions prioritaires".
 #
 # Limitation (documented): the model predicts *observed* trips; demand lost because a station was already
@@ -192,19 +193,18 @@ wx = pd.DataFrame({"hour_ts": pd.to_datetime(fc["time"]), "temperature_c": fc["t
                    "humidity_pct": fc["relative_humidity_2m"]})
 wx = wx[(wx.hour_ts >= now_local) & (wx.hour_ts < now_local + pd.Timedelta(hours=HORIZON_H))]
 
-# %% ---------- 3. Build features (same as training) and predict ----------
-enc = read_pdf("gold_station_hour_encoding")
-enc_station = read_pdf("gold_station_encoding")
-grid = cur.merge(wx, how="cross")
-grid["hour"] = grid.hour_ts.dt.hour
-grid["dow"] = (grid.hour_ts.dt.day_of_week + 1) % 7 + 1           # Spark convention: 1 = Sunday
-grid["is_weekend"] = grid["dow"].isin([1, 7]).astype(int)
-grid["capacity"] = grid["capacity"].astype(float)
-grid = (grid.merge(enc, on=["station_id", "hour", "is_weekend"], how="left")
-            .merge(enc_station, on="station_id", how="left"))
-enc_cols = [c for c in grid.columns if c.startswith("enc_")]
-grid[enc_cols] = grid[enc_cols].fillna(0.0)
+# %% ---------- 3. Build features (same as training) and predict hourly demand ----------
+# One shared implementation of the features and of the risk rules (package `smartbike`, unit-tested).
+# Locally it is imported from the repo; in Fabric it is attached to the notebook Environment as a wheel.
+if not IS_FABRIC:
+    sys.path.insert(0, ROOT)
+from smartbike.features import build_feature_grid  # noqa: E402
+from smartbike.risk import RiskConfig, assess  # noqa: E402
 
+RISK_METHOD = "probabilistic"   # chosen by the alert backtest (scripts/backtest_alerts.py): see docs/results.md
+cfg = RiskConfig(horizon_h=HORIZON_H)
+grid = build_feature_grid(cur[["station_id", "capacity", "lat", "lon"]], wx,
+                          read_pdf("gold_station_hour_encoding"), read_pdf("gold_station_encoding"))
 for target in ["departures", "arrivals"]:
     try:     # production = the version that won the champion/challenger test (notebook 03, step 5)
         model = mlflow.sklearn.load_model(f"models:/{MODEL_NAME}_{target}@champion")
@@ -213,34 +213,43 @@ for target in ["departures", "arrivals"]:
     features = list(model.feature_names_in_)          # exact training feature list, stored in the model
     grid[f"pred_{target}"] = np.clip(model.predict(grid[features]), 0, None)
 
-# %% ---------- 4. Projection, risk and recommended action ----------
-agg = grid.groupby(["station_id", "station_name", "lat", "lon", "capacity",
-                    "num_bikes_available", "num_docks_available", "is_renting", "is_returning"], as_index=False) \
-          .agg(pred_departures=("pred_departures", "sum"), pred_arrivals=("pred_arrivals", "sum"))
-cap = agg["capacity"]
-threshold = np.maximum(2, 0.10 * cap)
-agg["projected_bikes"] = (agg.num_bikes_available - agg.pred_departures + agg.pred_arrivals).clip(0, cap)
-agg["projected_docks"] = cap - agg["projected_bikes"]
-agg["fill_ratio_now"] = (agg.num_bikes_available / cap).round(3)
-agg["risk"] = np.select(
-    [agg.num_bikes_available == 0, agg.num_docks_available == 0,
-     agg.projected_bikes <= threshold, agg.projected_docks <= threshold],
-    ["vide maintenant", "saturee maintenant", "risque vide", "risque saturee"], default="ok")
-target_bikes = (0.5 * cap).round()
-agg["bikes_to_move"] = np.where(agg.risk.isin(["vide maintenant", "risque vide"]),
-                                target_bikes - agg.projected_bikes,
-                                np.where(agg.risk.isin(["saturee maintenant", "risque saturee"]),
-                                         -(agg.projected_bikes - target_bikes), 0)).round().astype(int)
-agg["action"] = np.select([agg.bikes_to_move > 0, agg.bikes_to_move < 0],
-                          ["ajouter des velos", "retirer des velos"], default="aucune")
-# priority = how many bikes must move x how fast demand is expected (busy stations first)
-agg["priority_score"] = (agg.bikes_to_move.abs() * (1 + agg.pred_departures + agg.pred_arrivals)).round(1)
-agg["priority_rank"] = agg.priority_score.rank(ascending=False, method="first").astype(int)
+# %% ---------- 4. Stock-out risk, recommended action and priority ----------
+# hourly Poisson rates (stations x hours) -> P(empty / full within HORIZON_H) by Monte Carlo on the stock path
+lam = {t: grid.pivot_table(index="station_id", columns="hour_ts", values=f"pred_{t}", aggfunc="first")
+       for t in ["departures", "arrivals"]}
+cur = cur.set_index("station_id").loc[lam["departures"].index].reset_index()
+cur["pred_departures"] = lam["departures"].sum(axis=1).to_numpy()
+cur["pred_arrivals"] = lam["arrivals"].sum(axis=1).to_numpy()
+agg = assess(cur, cfg, method=RISK_METHOD, lam_dep=lam["departures"].to_numpy(), lam_arr=lam["arrivals"].to_numpy())
 agg["snapshot_time_local"] = now_local
 agg["horizon_hours"] = HORIZON_H
+agg["risk_method"] = RISK_METHOD
+agg = agg[["station_id", "station_name", "lat", "lon", "capacity", "num_bikes_available", "num_docks_available",
+           "is_renting", "is_returning", "pred_departures", "pred_arrivals", "projected_bikes", "projected_docks",
+           "fill_ratio_now", "p_empty", "p_full", "risk", "bikes_to_move", "action", "priority_score",
+           "priority_rank", "snapshot_time_local", "horizon_hours", "risk_method"]]
 
 save_pdf(agg.sort_values("priority_rank"), "gold_station_priority")
 pd.set_option("display.width", 200)
 print(agg.risk.value_counts())
 print(agg.sort_values("priority_rank").head(10)[["station_name", "num_bikes_available", "capacity",
                                                   "pred_departures", "pred_arrivals", "risk", "action", "bikes_to_move"]])
+
+# %% ---------- 5. Truck tours for the next shift (capacitated pickup & delivery, OR-Tools) ----------
+# The priority list says *what* to fix; the plan says *who goes where, in which order, with how many bikes*.
+# Compared with following the list in order (greedy baseline) on the same fleet and shift.
+from smartbike.routing import FleetConfig, candidates_from_priority, greedy_plan, optimise_plan  # noqa: E402
+
+fleet = FleetConfig(n_trucks=3, truck_capacity=30, shift_minutes=240)
+cand = candidates_from_priority(agg, top_n=80)
+plans, kpis = [], []
+for planner in (greedy_plan, optimise_plan):
+    plan, kpi = planner(cand, fleet)
+    plans.append(plan)
+    kpis.append(kpi)
+routes = pd.concat(plans, ignore_index=True).assign(snapshot_time_local=now_local)
+plan_kpis = pd.DataFrame(kpis).assign(snapshot_time_local=now_local, n_trucks=fleet.n_trucks,
+                                      truck_capacity=fleet.truck_capacity, shift_minutes=fleet.shift_minutes)
+save_pdf(routes, "gold_truck_routes")
+save_pdf(plan_kpis, "gold_truck_plan_kpis")
+print(plan_kpis[["method", "stops", "bikes_moved", "value_share", "km", "bikes_per_km"]].to_string(index=False))
