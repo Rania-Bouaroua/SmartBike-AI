@@ -309,5 +309,63 @@ lines = [
           f"{r.champion_mae_before} | {r.baseline_mae:.4f} | {'oui' if r.promoted else 'non'} |" for r in promo.itertuples()],
         ""]),
 ]
+
+# ---------- 9. truck tours (notebook 04, section 5) ----------
+if (T / "gold_truck_plan_kpis").exists():
+    tk = t("gold_truck_plan_kpis")
+    g, o = tk.iloc[0], tk.iloc[1]
+    lines += [
+        "## 9. Tournées des camions de rééquilibrage (OR-Tools)",
+        "",
+        f"Flotte : {int(o.n_trucks)} camions de {int(o.truck_capacity)} vélos, tournée de {int(o.shift_minutes)} min, "
+        f"{int(o.candidates)} stations candidates (les plus prioritaires), camions partis vides, 15 km/h, "
+        "4 min par arrêt + 15 s par vélo. Problème : collecte et livraison avec capacité et prix (une station non "
+        "visitée « coûte » sa priorité), résolu par OR-Tools (recherche locale guidée, 15 s), comparé à la pratique "
+        "« suivre la liste de priorité dans l'ordre ».",
+        "",
+        "| Méthode | Arrêts | Vélos déplacés | Urgence couverte | Distance | Vélos / km |",
+        "|---|---:|---:|---:|---:|---:|",
+        *[f"| {r.method} | {r.stops} | {fmt(r.bikes_moved)} | {r.value_share:.0%} | {r.km:.0f} km | "
+          f"{r.bikes_per_km:.1f} |" for r in tk.itertuples()],
+        "",
+        f"Sur ce relevé, l'optimisation déplace **{(o.bikes_moved / g.bikes_moved - 1):+.0%} de vélos** et couvre "
+        f"**{o.value_share:.0%}** de l'urgence (contre {g.value_share:.0%}) en roulant {o.km:.0f} km au lieu de "
+        f"{g.km:.0f} km. Le gain vient de l'ordre des arrêts : enchaîner une station pleine puis une station vide "
+        "voisine, au lieu de traverser la ville au rythme du classement.",
+        "",
+    ]
+
+# ---------- 10. alert backtest (scripts/backtest_alerts.py) ----------
+if (T / "gold_alert_backtest").exists():
+    bt = t("gold_alert_backtest")
+    names = {"naive": "stock déjà bas (sans prévision)", "point": "prévision ponctuelle (ancienne règle)",
+             "probabilistic": "probabiliste (Monte Carlo)"}
+    r0 = bt.iloc[0]
+    lines += [
+        "## 10. Fiabilité des alertes : backtest sur l'historique réel",
+        "",
+        f"Vérité terrain : flux GBFS enregistré toutes les 5 min (`scripts/gbfs_history.py`). À chaque instant de départ, "
+        f"l'alerte est recalculée comme en production (état des stations, météo, modèles champion), puis comparée à ce "
+        f"qui s'est réellement passé dans les **{int(r0.horizon_h)} h** suivantes. Stations déjà en rupture exclues ; "
+        f"seuil de probabilité réglé sur la première moitié des instants, évalué sur la seconde. "
+        f"Instants de test : {int(r0.origins_test)} ; fenêtres station × horizon évaluées : {fmt(bt.n.max())}.",
+        "",
+        "| Alerte | Méthode | Alertes | Ruptures réelles | Précision | Rappel | F1 | PR-AUC |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+        *[f"| {'vide' if r.event == 'empty' else 'pleine'} | {names[r.method]} | {r.alerts} | {r.events} | "
+          f"{r.precision:.0%} | {r.recall:.0%} | {r.f1:.2f} | {r.pr_auc:.2f} |" for r in bt.itertuples()],
+        "",
+        "Lecture : la précision dit si l'opérateur peut faire confiance à une alerte, le rappel combien de ruptures "
+        "réelles ont été vues à temps ; la PR-AUC mesure la qualité du classement des stations (hasard = prévalence, "
+        f"ici {bt.prevalence.iloc[0]:.1%}).",
+        "",
+        "![](figures/fig10_alert_backtest.png)",
+        "",
+        "> Historique encore court au moment de la génération : ces chiffres sont à reconfirmer en relançant "
+        "`scripts/backtest_alerts.py` après plusieurs jours d'enregistrement (le script, les tables et ce rapport se "
+        "mettent à jour automatiquement).",
+        "",
+    ]
+
 (ROOT / "docs" / "results.md").write_text("\n".join(lines), encoding="utf-8")
 print("written docs/results.md and", len(list(FIG.glob('*.png'))), "figures")

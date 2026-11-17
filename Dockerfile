@@ -9,7 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     SMARTBIKE_ROOT=/srv/smartbike \
     SMARTBIKE_MODEL_DIR=/srv/smartbike/models/serving \
-    MLFLOW_DISABLE_AGENT_HINT=1
+    MLFLOW_DISABLE_AGENT_HINT=1 \
+    OMP_NUM_THREADS=1
+# OMP_NUM_THREADS=1: a 1-row prediction gains nothing from OpenMP, and N concurrent requests x N cores threads
+# oversubscribe the CPU (measured: /v1/predict throughput fell from 14 req/s to 6 req/s at concurrency 8).
 
 WORKDIR /srv/smartbike
 
@@ -30,4 +33,7 @@ USER smartbike
 EXPOSE 8000 8501
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)" || exit 1
-CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# One process per container, scaled with replicas behind a load balancer (App Service instances, compose --scale).
+# Measured: `--workers 2` added ~45 ms to every keep-alive request (docs/benchmark.md); the access log duplicates
+# the structured JSON request log of app/api.py.
+CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

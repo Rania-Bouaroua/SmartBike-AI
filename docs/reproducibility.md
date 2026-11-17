@@ -67,12 +67,28 @@ Key Vault `kv-smartbike-dev-<suffix>`, rôles RBAC des 3 personas, Log Analytics
    **Activator** : *Set alert* sur ALERT-1 (station très utilisée vide ≥ 10 min → Teams), ALERT-2 (> 8 % du réseau vide/saturé),
    ALERT-3 (collecteur arrêté depuis 5 min → e-mail au Data Engineer).
 
+## 5 bis. Environment Fabric (package `smartbike`)
+Le notebook 04 importe la logique métier partagée (`smartbike` : risque probabiliste, tournées camion).
+1. Construire la *wheel* : `pip wheel . --no-deps -w dist` (la CI la publie aussi comme artefact).
+2. Soit automatiquement : `python infra/deploy_fabric.py --workspace-id <guid>` (aperçu), puis `--apply` (crée
+   `lh_smartbike`, `env_smartbike` avec la wheel, et importe/actualise les 5 notebooks via l'API REST Fabric) ;
+   soit à la main : *New → Environment* `env_smartbike` → *Custom libraries* → téléverser la wheel → *Publish*.
+3. Dans l'Environment, ajouter depuis PyPI : `ortools`, `pandera`. Attacher `env_smartbike` aux notebooks 04 (et à tous
+   pour simplifier).
+> `infra/deploy_fabric.py` suit l'API REST publique de Fabric (v1) mais n'a pas encore été exécuté sur un vrai tenant.
+
 ## 6. Machine Learning
 Exécuter `nb_03_ml_demand_forecast` : MLflow est intégré à Fabric → l'expérience `smartbike-demand-forecast` et les modèles
 `smartbike_demand_model_departures` / `_arrivals` apparaissent dans l'espace. Puis `nb_04_station_priority`
 (planifiable toutes les 30 min via un 2ᵉ pipeline `pl_smartbike_priority`).
 Le notebook 03 se termine par une **promotion champion / challenger** : la nouvelle version ne reçoit l'alias `champion`
 (utilisé par le notebook 04 et l'API) que si sa MAE bat celle du champion actuel et la baseline (`gold_model_promotion_log`).
+
+### 6 bis. Fiabilité des alertes (backtest)
+Le flux GBFS ne garde pas d'historique : on l'enregistre (en local `python scripts/gbfs_history.py`, toutes les 5 min ;
+dans Fabric, la table de l'Eventhouse alimentée par l'Eventstream joue ce rôle). Après quelques heures (idéalement
+plusieurs jours) : `python scripts/backtest_alerts.py` → tables `gold_alert_backtest*`, figure 10, section 10 des
+résultats, onglet « Modèle » de l'application.
 
 ## 7. Power BI
 Suivre [`powerbi/README_powerbi.md`](../powerbi/README_powerbi.md) (modèle Direct Lake + [`measures.dax`](../powerbi/measures.dax)).
@@ -84,6 +100,17 @@ streamlit run app/dashboard.py           # application opérateur : http://local
 ```
 Avec `SMARTBIKE_API_KEY` défini, l'API exige l'en-tête `X-API-Key` (en Azure : paramètre d'App Service = référence Key Vault).
 Déploiement possible : Azure App Service (Linux, B1) ou Azure Container Apps ; identité managée avec *Key Vault Secrets User*.
+
+### 8 bis. Mode « production » avec Docker
+```bash
+python scripts/export_models.py          # modèles champion -> models/serving/ (+ manifest.json)
+docker compose up --build                # API :8000, application :8501 (données et modèles montés en lecture seule)
+python scripts/validate_contracts.py     # contrôle qualité des tables servies
+```
+L'image (`Dockerfile`) ne contient que le code : utilisateur non-root, healthcheck, un processus par conteneur
+(montée en charge par réplicas), dépendances figées dans `requirements/serving.txt`. La même image se déploie sur
+Azure Container Apps ou App Service (conteneur) ; les tables Gold y sont montées depuis OneLake/ADLS.
+Mesures de performance : `docs/benchmark.md` (à lancer depuis le réseau Docker, voir l'en-tête du script).
 
 ## 9. Nettoyage après la soutenance
 ```powershell

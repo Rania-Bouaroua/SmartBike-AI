@@ -70,8 +70,20 @@ def test_probabilistic_assessment_flags_the_draining_station():
     assert out.loc[3, "risk"] == "ok" and out.loc[3, "p_empty"] < 0.1
     with pytest.raises(ValueError):
         assess(df, method="probabilistic")                  # rates are mandatory
-    with pytest.raises(ValueError):
-        assess(df.assign(capacity=0), method="point")
+    with pytest.raises(ValueError):                         # no working dock at all
+        assess(df.assign(num_bikes_available=0, num_docks_available=0), method="point")
+
+
+def test_usable_capacity_bounds_the_stock_not_the_nominal_capacity():
+    # nominal 20 docks, but 5 hold broken bikes: 3 bikes + 12 free docks = 15 usable -> fills up much sooner
+    df = pd.DataFrame({"station_id": ["x"], "station_name": ["X"], "capacity": [20], "num_bikes_available": [3],
+                       "num_docks_available": [12], "pred_departures": [0.0], "pred_arrivals": [14.0]})
+    lam_arr = np.full((1, 2), 7.0)
+    out = assess(df, RiskConfig(n_sims=4000), "probabilistic", np.zeros((1, 2)), lam_arr)
+    assert out.usable_capacity.iloc[0] == 15
+    nominal_p_full = stockout_probability(np.array([3]), np.array([20]), np.zeros((1, 2)), lam_arr,
+                                          RiskConfig(n_sims=4000))[1][0]
+    assert out.p_full.iloc[0] > nominal_p_full + 0.2      # nominal capacity would hide most of the risk
 
 
 # ------------------------------------------------------------------ features

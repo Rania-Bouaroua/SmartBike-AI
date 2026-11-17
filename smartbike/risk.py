@@ -40,6 +40,17 @@ class RiskConfig:
         return np.maximum(self.min_units, self.low_frac * np.asarray(capacity, dtype=float))
 
 
+def usable_capacity(bikes: np.ndarray, docks: np.ndarray) -> np.ndarray:
+    """Docks a rider can actually use right now = bikes available + free docks.
+
+    Not the nominal `capacity`: broken bikes stay locked in docks and some docks are out of service. On the
+    17/11/2026 snapshot 90 % of stations had fewer usable docks than nominal (median gap 3; 5,724 disabled bikes),
+    and 92 % of full stations were in that case - simulating with the nominal capacity under-estimated P(full)
+    (backtest calibration curve, docs/results.md section 10).
+    """
+    return np.asarray(bikes, dtype=float) + np.asarray(docks, dtype=float)
+
+
 def point_projection(bikes: np.ndarray, capacity: np.ndarray, dep_total: np.ndarray,
                      arr_total: np.ndarray) -> np.ndarray:
     """Expected stock at the end of the horizon, bounded to [0, capacity]."""
@@ -85,7 +96,8 @@ def assess(df: pd.DataFrame, cfg: RiskConfig = RiskConfig(), method: str = "prob
            lam_dep: np.ndarray | None = None, lam_arr: np.ndarray | None = None) -> pd.DataFrame:
     """Risk label, recommended action and priority for every station.
 
-    df needs: capacity, num_bikes_available, num_docks_available, pred_departures, pred_arrivals (horizon totals).
+    df needs: num_bikes_available, num_docks_available, pred_departures, pred_arrivals (horizon totals); the stock is
+    bounded by the usable capacity (bikes + free docks), see usable_capacity().
     method="probabilistic" also needs the hourly rates lam_dep / lam_arr (n, H); method="point" does not.
     Adds: projected_bikes, projected_docks, fill_ratio_now, p_empty, p_full, risk, bikes_to_move, action,
     priority_score, priority_rank.
@@ -93,11 +105,12 @@ def assess(df: pd.DataFrame, cfg: RiskConfig = RiskConfig(), method: str = "prob
     if method not in ("point", "probabilistic"):
         raise ValueError(f"unknown method {method!r}")
     out = df.copy()
-    cap = out["capacity"].astype(float).to_numpy()
-    if (cap <= 0).any():
-        raise ValueError("capacity must be > 0 (filter stations without docks first)")
     bikes = out["num_bikes_available"].to_numpy()
     docks = out["num_docks_available"].to_numpy()
+    cap = usable_capacity(bikes, docks)
+    if (cap <= 0).any():
+        raise ValueError("usable capacity must be > 0 (filter stations with no working dock first)")
+    out["usable_capacity"] = cap
     thr = cfg.threshold(cap)
     out["projected_bikes"] = point_projection(bikes, cap, out.pred_departures, out.pred_arrivals)
     out["projected_docks"] = cap - out["projected_bikes"]

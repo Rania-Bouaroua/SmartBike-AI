@@ -20,3 +20,9 @@ et la remplacer ici.
 **Répétabilité** : le paramètre `month` permet de rejouer n'importe quel mois ; les notebooks écrivent en `overwrite`
 (idempotents : relancer donne le même résultat).
 **Pipeline 2 (optionnel)** `pl_smartbike_priority` : `NB_04_Station_Priority` toutes les 30 min de 7 h à 21 h (heure de NY).
+Il produit aussi les tournées des camions (`gold_truck_routes`, `gold_truck_plan_kpis`) ; l'Environment `env_smartbike`
+(wheel `smartbike` + `ortools`, `pandera`) doit être attaché au notebook.
+
+**Contrôle qualité.** Les contrats de données (`smartbike/contracts.py`) sont vérifiés à chaque nouvelle version d'une
+table par l'API et l'application (refus explicite, HTTP 503) ; `scripts/validate_contracts.py` les vérifie tous en fin
+de chaîne (code retour 1 en cas de violation, utilisable comme dernière activité).

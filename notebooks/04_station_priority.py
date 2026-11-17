@@ -181,7 +181,7 @@ print(f"snapshot: {latest}  ({snapshot_utc.tz_convert(NY_TZ)})")
 
 stations = read_pdf("silver_stations")[["station_id", "gbfs_station_id", "station_name", "lat", "lon", "capacity"]]
 cur = stations.merge(status, on="gbfs_station_id", how="inner")
-cur = cur[(cur.is_installed == 1) & (cur.capacity > 0)]
+cur = cur[(cur.is_installed == 1) & (cur.capacity > 0) & (cur.num_bikes_available + cur.num_docks_available > 0)]
 
 # %% ---------- 2. Weather forecast for the next hours ----------
 now_local = snapshot_utc.tz_convert(NY_TZ).floor("h").tz_localize(None)

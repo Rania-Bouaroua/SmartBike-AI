@@ -65,30 +65,30 @@ Lecture : au niveau d'une station et d'une heure (≈ 1-2 trajets en moyenne), l
 
 ## 6. Priorités d'intervention (notebook 04, état live GBFS)
 
-Snapshot : **17/11/2026 11:00** (heure de New York), horizon 2 h.
+Snapshot : **17/11/2026 14:00** (heure de New York), horizon 2 h.
 
 | État | Stations |
 |---|---:|
-| vide maintenant | 319 |
-| risque vide | 367 |
-| saturee maintenant | 242 |
-| risque saturee | 130 |
-| ok | 1412 |
+| vide maintenant | 259 |
+| risque vide | 236 |
+| saturee maintenant | 197 |
+| risque saturee | 36 |
+| ok | 1742 |
 
-Vélos à déplacer pour ramener les stations à risque à 50 % : **16 142**.
+Vélos à déplacer pour ramener les stations à risque à 50 % : **9 781**.
 
 | Rang | Station | Vélos dispo / capacité | Départs prévus | Arrivées prévues | État | Action |
 |---:|---|---:|---:|---:|---|---|
-| 1 | Broadway & W 25 St | 101 / 109 | 43.1 | 48.4 | saturee maintenant | retirer des velos (-52) |
-| 2 | Broadway & E 14 St | 101 / 114 | 43.5 | 48.0 | risque saturee | retirer des velos (-49) |
-| 3 | Broadway & W 29 St | 90 / 101 | 35.7 | 41.7 | risque saturee | retirer des velos (-46) |
-| 4 | Gansevoort St & Hudson St | 110 / 120 | 24.0 | 32.0 | saturee maintenant | retirer des velos (-58) |
-| 5 | E 40 St & 5 Ave | 90 / 93 | 31.9 | 33.5 | risque saturee | retirer des velos (-46) |
-| 6 | Lafayette St & Astor Pl | 95 / 105 | 33.2 | 33.6 | risque saturee | retirer des velos (-43) |
-| 7 | W 43 St & 10 Ave | 1 / 117 | 23.7 | 22.5 | risque vide | ajouter des velos (+58) |
-| 8 | 10 Ave & W 18 St | 74 / 78 | 27.0 | 39.2 | saturee maintenant | retirer des velos (-39) |
-| 9 | Central Park S & Grand Army Plaza | 80 / 85 | 40.3 | 35.8 | saturee maintenant | retirer des velos (-34) |
-| 10 | 10 Ave & W 14 St | 79 / 81 | 28.9 | 32.3 | saturee maintenant | retirer des velos (-41) |
+| 1 | Broadway & W 25 St | 105 / 109 | 69.9 | 62.2 | saturee maintenant | retirer des velos (-43) |
+| 2 | W 21 St & 6 Ave | 63 / 74 | 82.0 | 82.1 | saturee maintenant | retirer des velos (-26) |
+| 3 | Park Ave & E 42 St | 75 / 83 | 51.3 | 50.6 | saturee maintenant | retirer des velos (-32) |
+| 4 | 8 Ave & W 31 St | 85 / 97 | 33.4 | 49.0 | risque saturee | retirer des velos (-49) |
+| 5 | Broadway & E 19 St | 92 / 99 | 38.5 | 34.9 | saturee maintenant | retirer des velos (-38) |
+| 6 | W 24 St & 7 Ave | 74 / 79 | 41.8 | 50.0 | risque saturee | retirer des velos (-39) |
+| 7 | E 10 St & Ave A | 0 / 107 | 24.3 | 28.3 | vide maintenant | ajouter des velos (+50) |
+| 8 | W Broadway & Spring St | 98 / 99 | 25.0 | 24.2 | saturee maintenant | retirer des velos (-47) |
+| 9 | Forsyth St & Grand St | 90 / 93 | 32.0 | 34.4 | risque saturee | retirer des velos (-46) |
+| 10 | University Pl & E 8 St | 74 / 79 | 32.8 | 31.5 | saturee maintenant | retirer des velos (-33) |
 
 ![](figures/fig6_priority_states.png)
 
@@ -110,3 +110,33 @@ Vélos à déplacer pour ramener les stations à risque à 50 % : **16 142**.
 |---|---:|---:|---:|---:|---:|---|
 | smartbike_demand_model_departures | 2 | 1.2956 | 1 | 1.2976 | 1.3388 | oui |
 | smartbike_demand_model_arrivals | 2 | 1.3119 | 1 | 1.3097 | 1.3755 | non |
+
+## 9. Tournées des camions de rééquilibrage (OR-Tools)
+
+Flotte : 3 camions de 30 vélos, tournée de 240 min, 80 stations candidates (les plus prioritaires), camions partis vides, 15 km/h, 4 min par arrêt + 15 s par vélo. Problème : collecte et livraison avec capacité et prix (une station non visitée « coûte » sa priorité), résolu par OR-Tools (recherche locale guidée, 15 s), comparé à la pratique « suivre la liste de priorité dans l'ordre ».
+
+| Méthode | Arrêts | Vélos déplacés | Urgence couverte | Distance | Vélos / km |
+|---|---:|---:|---:|---:|---:|
+| greedy (liste de priorité) | 27 | 621 | 38% | 109 km | 5.7 |
+| optimisé (OR-Tools) | 40 | 989 | 60% | 74 km | 13.4 |
+
+Sur ce relevé, l'optimisation déplace **+59% de vélos** et couvre **60%** de l'urgence (contre 38%) en roulant 74 km au lieu de 109 km. Le gain vient de l'ordre des arrêts : enchaîner une station pleine puis une station vide voisine, au lieu de traverser la ville au rythme du classement.
+
+## 10. Fiabilité des alertes : backtest sur l'historique réel
+
+Vérité terrain : flux GBFS enregistré toutes les 5 min (`scripts/gbfs_history.py`). À chaque instant de départ, l'alerte est recalculée comme en production (état des stations, météo, modèles champion), puis comparée à ce qui s'est réellement passé dans les **1 h** suivantes. Stations déjà en rupture exclues ; seuil de probabilité réglé sur la première moitié des instants, évalué sur la seconde. Instants de test : 1 ; fenêtres station × horizon évaluées : 2 246.
+
+| Alerte | Méthode | Alertes | Ruptures réelles | Précision | Rappel | F1 | PR-AUC |
+|---|---|---:|---:|---:|---:|---:|---:|
+| vide | stock déjà bas (sans prévision) | 422 | 151 | 32% | 91% | 0.48 | 0.47 |
+| vide | prévision ponctuelle (ancienne règle) | 373 | 151 | 34% | 85% | 0.49 | 0.42 |
+| vide | probabiliste (Monte Carlo) | 341 | 151 | 39% | 88% | 0.54 | 0.55 |
+| pleine | stock déjà bas (sans prévision) | 354 | 136 | 36% | 93% | 0.51 | 0.58 |
+| pleine | prévision ponctuelle (ancienne règle) | 103 | 136 | 50% | 38% | 0.43 | 0.41 |
+| pleine | probabiliste (Monte Carlo) | 181 | 136 | 48% | 64% | 0.55 | 0.48 |
+
+Lecture : la précision dit si l'opérateur peut faire confiance à une alerte, le rappel combien de ruptures réelles ont été vues à temps ; la PR-AUC mesure la qualité du classement des stations (hasard = prévalence, ici 6.9%).
+
+![](figures/fig10_alert_backtest.png)
+
+> Historique encore court au moment de la génération : ces chiffres sont à reconfirmer en relançant `scripts/backtest_alerts.py` après plusieurs jours d'enregistrement (le script, les tables et ce rapport se mettent à jour automatiquement).

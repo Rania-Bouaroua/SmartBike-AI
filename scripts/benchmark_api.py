@@ -2,8 +2,9 @@
 
     python scripts/benchmark_api.py --url http://localhost:8000 --requests 400 --concurrency 1 8 32
 
-Writes docs/benchmark.md (and prints it). Run it against the Docker stack (production-like: 2 uvicorn workers) and
-report the environment next to the numbers - latency figures without their context are meaningless.
+Writes docs/benchmark.md (and prints it). Run it from INSIDE the Docker network (see docs/benchmark.md):
+on Windows, Docker Desktop's port forwarding adds ~55 ms per request and would be measured instead of the
+service. Latency figures without their context are meaningless.
 """
 from __future__ import annotations
 
@@ -58,8 +59,10 @@ async def main_async(args) -> str:
     async with httpx.AsyncClient(base_url=args.url, headers=headers, timeout=60,
                                  limits=httpx.Limits(max_connections=max(args.concurrency))) as client:
         station = (await client.get("/v1/priority", params={"limit": 1})).json()[0]["station_id"]
-        for path, params in scenarios(station).values():               # warm-up: caches, model load
-            await client.get(path, params=params)
+        for path, params in scenarios(station).values():   # warm-up: table + model loading, caches, JIT paths
+            for _ in range(20):
+                await client.get(path, params=params)
+        await asyncio.sleep(5)                              # let background loading settle before measuring
         lines = ["| Endpoint | Concurrence | p50 (ms) | p95 (ms) | p99 (ms) | Débit (req/s) | Erreurs |",
                  "|---|---:|---:|---:|---:|---:|---:|"]
         for label, (path, params) in scenarios(station).items():
@@ -69,9 +72,11 @@ async def main_async(args) -> str:
                 lines.append(f"| {label} | {c} | {r['p50']:.1f} | {r['p95']:.1f} | {r['p99']:.1f} | "
                              f"{r['rps']:.0f} | {r['errors']} |")
                 print(lines[-1], flush=True)
-    env = (f"Cible : `{args.url}` · client : Python {platform.python_version()} / httpx, même machine "
+    env = (f"Cible : `{args.url}` · client : Python {platform.python_version()} / httpx (connexions réutilisées), "
+           f"même machine "
            f"({platform.processor() or platform.machine()}, {os.cpu_count()} cœurs logiques). "
-           f"{args.requests} requêtes par scénario (rebalancing : {max(50, args.requests // 4)}), après échauffement.")
+           f"{args.requests} requêtes par scénario (rebalancing : {max(50, args.requests // 4)}), après échauffement "
+           f"(20 requêtes par scénario + 5 s).")
     return "\n".join(["# Benchmark de l'API", "", env, "", *lines, ""])
 
 

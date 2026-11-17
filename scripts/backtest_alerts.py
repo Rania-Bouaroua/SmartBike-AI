@@ -33,7 +33,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from app import common  # noqa: E402
 from smartbike import evaluation as ev  # noqa: E402
-from smartbike.risk import RiskConfig, point_projection, stockout_probability  # noqa: E402
+from smartbike.risk import RiskConfig, point_projection, stockout_probability, usable_capacity  # noqa: E402
 
 HISTORY = ROOT / "data" / "raw" / "gbfs_history"
 MAX_GAP = pd.Timedelta(minutes=15)       # truth needs a dense record of the window
@@ -87,15 +87,16 @@ def origins(snap_times: pd.Series, horizon: pd.Timedelta, every: pd.Timedelta) -
 
 def score_origin(hist: pd.DataFrame, t0: pd.Timestamp, wx: pd.DataFrame, cfg: RiskConfig) -> pd.DataFrame:
     H = pd.Timedelta(hours=cfg.horizon_h)
-    cur = hist[(hist.snapshot_utc == t0) & (hist.is_renting == 1)].drop_duplicates("station_id").reset_index(drop=True)
+    cur = hist[(hist.snapshot_utc == t0) & (hist.is_renting == 1)].drop_duplicates("station_id")
+    cur = cur[cur.num_bikes_available + cur.num_docks_available > 0].reset_index(drop=True)
     local0 = t0.tz_convert(common.NY_TZ).tz_localize(None)
     hours = wx[(wx.hour_ts >= local0.floor("h"))].head(cfg.horizon_h).reset_index(drop=True)
     if len(hours) < cfg.horizon_h:
         hours = pd.DataFrame({"hour_ts": pd.date_range(local0.floor("h"), periods=cfg.horizon_h, freq="h")})
     lam_dep, lam_arr = common.hourly_rates(cur, hours)
-    cap = cur.capacity.to_numpy(float)
     bikes = cur.num_bikes_available.to_numpy()
     docks = cur.num_docks_available.to_numpy()
+    cap = usable_capacity(bikes, docks)            # same bound as production (smartbike.risk.assess)
     thr = cfg.threshold(cap)
     proj = point_projection(bikes, cap, lam_dep.sum(1), lam_arr.sum(1))
     p_empty, p_full = stockout_probability(bikes, cap, lam_dep, lam_arr, cfg)
@@ -123,7 +124,8 @@ def evaluate(rows: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         y_col, p_col = f"{event}_within", f"p_{event}"
         c, t = calib[calib[already] > 0], test[test[already] > 0]
         p_star = ev.best_threshold(c[y_col], c[p_col])
-        naive_score = -t.num_bikes_available / t.capacity if event == "empty" else -t.num_docks_available / t.capacity
+        usable = t.num_bikes_available + t.num_docks_available
+        naive_score = -t.num_bikes_available / usable if event == "empty" else -t.num_docks_available / usable
         point_score = -t.projected_bikes if event == "empty" else t.projected_bikes
         for method, pred, score in (("naive", t[f"naive_{event}"], naive_score),
                                     ("point", t[f"point_{event}"], point_score),

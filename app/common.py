@@ -8,6 +8,7 @@ from __future__ import annotations
 import functools
 import os
 import pathlib
+import time
 
 import numpy as np
 import pandas as pd
@@ -21,12 +22,33 @@ MODEL_NAME = "smartbike_demand_model"
 NY_TZ = "America/New_York"
 
 
-def table_version(name: str) -> float:
-    """Last modification time of a table's files: changes whenever a notebook rewrites the table."""
+# File-system metadata is cached for a few seconds: on network / container bind mounts every stat() costs
+# milliseconds and was dominating request latency (benchmark: /health 110 ms -> ~2 ms). A rewritten table is
+# therefore picked up at most METADATA_TTL_S seconds later.
+METADATA_TTL_S = float(os.environ.get("SMARTBIKE_METADATA_TTL_S", "10"))
+_meta_cache: dict[tuple, tuple[float, object]] = {}
+
+
+def _ttl(key: tuple, compute):
+    now = time.monotonic()
+    hit = _meta_cache.get(key)
+    if hit and now - hit[0] < METADATA_TTL_S:
+        return hit[1]
+    value = compute()
+    _meta_cache[key] = (now, value)
+    return value
+
+
+def _version_uncached(name: str) -> float:
     path = TABLES / name
     if not path.exists():
         raise FileNotFoundError(f"table {name} not found in {TABLES} - run the notebooks first")
     return max((f.stat().st_mtime for f in path.rglob("*.parquet")), default=path.stat().st_mtime)
+
+
+def table_version(name: str) -> float:
+    """Last modification time of a table's files: changes whenever a notebook rewrites the table."""
+    return _ttl(("version", str(TABLES), name), lambda: _version_uncached(name))
 
 
 @functools.lru_cache(maxsize=64)
@@ -42,7 +64,13 @@ def table(name: str, columns: tuple[str, ...] | None = None) -> pd.DataFrame:
     return _read_table(name, columns, table_version(name))
 
 
-table.cache_clear = _read_table.cache_clear  # type: ignore[attr-defined]  (tests reset the cache)
+def _clear_caches() -> None:
+    _read_table.cache_clear()
+    _rows_by_station.cache_clear()
+    _meta_cache.clear()
+
+
+table.cache_clear = _clear_caches  # type: ignore[attr-defined]  (tests reset the caches)
 
 
 GBFS_STATUS_URL = "https://gbfs.citibikenyc.com/gbfs/en/station_status.json"
@@ -71,7 +99,8 @@ def live_status(timeout: float = 20) -> pd.DataFrame:
 
 
 def available_tables() -> list[str]:
-    return sorted(p.name for p in TABLES.iterdir() if p.is_dir()) if TABLES.exists() else []
+    return _ttl(("tables", str(TABLES)), lambda: sorted(p.name for p in TABLES.iterdir() if p.is_dir())
+                if TABLES.exists() else [])
 
 
 @functools.lru_cache(maxsize=2)
@@ -99,15 +128,28 @@ def model(target: str):
     raise RuntimeError(f"no registered model {MODEL_NAME}_{target} - run notebook 03 first")
 
 
+@functools.lru_cache(maxsize=8)
+def _rows_by_station(name: str, version: float) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
+    """Table split by station_id, built once per table version: one-station lookups become O(1) instead of a merge
+    against the whole table (profiling: the merges were half of the /v1/predict latency)."""
+    df = table(name)
+    return {k: g for k, g in df.groupby("station_id", sort=False)}, df.iloc[:0]
+
+
+def station_rows(name: str, station_id: str) -> pd.DataFrame:
+    groups, empty = _rows_by_station(name, table_version(name))
+    return groups.get(station_id, empty)
+
+
 def build_features(station_id: str, hour_ts: pd.Timestamp, weather: dict) -> pd.DataFrame:
     """Model features for one station and one local hour (thin wrapper over smartbike.features)."""
-    st = table("silver_stations")
-    row = st[st.station_id == station_id]
+    row = station_rows("silver_stations", station_id)
     if row.empty:
         raise KeyError(station_id)
     hours = pd.DataFrame([{"hour_ts": pd.Timestamp(hour_ts), **weather}])
     return build_feature_grid(row[["station_id", "capacity", "lat", "lon"]], hours,
-                              table("gold_station_hour_encoding"), table("gold_station_encoding"))
+                              station_rows("gold_station_hour_encoding", station_id),
+                              station_rows("gold_station_encoding", station_id))
 
 
 def score(grid: pd.DataFrame) -> pd.DataFrame:
