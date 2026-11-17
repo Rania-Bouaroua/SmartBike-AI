@@ -54,10 +54,14 @@ SmartBike-AI/
 ├── security/           doc sécurité/gouvernance + Azure Policies (JSON)
 ├── infra/              deploy.ps1 / cleanup.ps1 / cycle de vie du stockage
 ├── docs/               architecture, dictionnaire, reproductibilité, coûts, démo, résultats
+├── smartbike/          logique métier testable (package) : features, risque probabiliste, tournées camion,
+│                       métriques de backtest, contrats de données — partagée par notebooks, API, app
 ├── app/                API FastAPI + application opérateur Streamlit (bonus)
+├── requirements/       dépendances figées du service (image Docker)
 ├── report/             rapport technique (DOCX + PDF) et son générateur
-├── tests/              tests unitaires (pytest)
-└── .github/workflows/  CI : lint, tests, JSON, détection de secrets
+├── tests/              tests unitaires, contrats, API, intégration sur données réelles (pytest)
+├── Dockerfile, docker-compose.yml   service API + application (non-root, healthchecks)
+└── .github/workflows/  CI : lint, tests, wheel Fabric, image Docker, JSON, détection de secrets
 ```
 
 ## Démarrage rapide (local, sans cloud)
@@ -71,9 +75,23 @@ python notebooks/01_bronze_to_silver.py && python notebooks/02_silver_to_gold.py
 python notebooks/03_ml_demand_forecast.py && python notebooks/04_station_priority.py
 python notebooks/05_advanced_aggregations.py
 python scripts/alert_monitor.py --live
-pytest -q tests
+python scripts/validate_contracts.py          # contrôle qualité des tables servies
+pytest -q                                     # unitaires + contrats + API + intégration
 uvicorn app.api:app --port 8000      # API  -> http://localhost:8000/docs
 streamlit run app/dashboard.py       # app  -> http://localhost:8501
+```
+
+### Fiabilité des alertes (vérité terrain)
+```bash
+python scripts/gbfs_history.py --interval 300 --iterations 144   # enregistre le flux GBFS (12 h)
+python scripts/backtest_alerts.py                               # précision / rappel des alertes vs réalité
+```
+
+### Mode « production » (Docker)
+```bash
+python scripts/export_models.py      # modèles champion -> models/serving/ (+ manifest), indépendant du registre
+docker compose up --build            # API :8000 + application :8501, données montées en lecture seule
+python scripts/benchmark_api.py      # latences p50/p95/p99 -> docs/benchmark.md
 ```
 Déploiement Azure/Fabric complet : [`docs/reproducibility.md`](docs/reproducibility.md).
 Sécurité : [`security/README_security.md`](security/README_security.md) · Coûts et nettoyage : [`docs/cost_and_inventory.md`](docs/cost_and_inventory.md) ·

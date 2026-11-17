@@ -1,0 +1,22 @@
+# build context = code only; data and models are mounted at run time
+data/
+models/
+mlruns/
+mlruns.db
+mlartifacts/
+logs/
+report/
+docs/
+notebooks/
+powerbi/
+kql/
+infra/
+pipeline/
+security/
+.git/
+.github/
+**/__pycache__/
+**/.pytest_cache/
+.ruff_cache/
+*.env
+.env

@@ -454,14 +454,19 @@ with tabs[1]:
 
         section("Tournée prioritaire", "Classement par score de priorité (urgence × vélos à déplacer × demande prévue).")
         tour = sel[sel.risk != "ok"].sort_values("priority_rank").head(60)
+        if "p_empty" in tour:
+            tour = tour.assign(p_risk=tour[["p_empty", "p_full"]].max(axis=1))
         st.dataframe(
-            tour[["priority_rank", "station_name", "label", "action", "bikes_to_move", "num_bikes_available",
-                  "capacity", "fill_ratio_now", "pred_departures", "pred_arrivals"]],
+            tour[[c for c in ["priority_rank", "station_name", "label", "p_risk", "action", "bikes_to_move",
+                              "num_bikes_available", "capacity", "fill_ratio_now", "pred_departures",
+                              "pred_arrivals"] if c in tour]],
             hide_index=True, width="stretch", height=420,
             column_config={
                 "priority_rank": st.column_config.NumberColumn("#", width="small"),
                 "station_name": st.column_config.TextColumn("Station", width="large"),
                 "label": "Risque", "action": "Action",
+                "p_risk": st.column_config.ProgressColumn(f"P(rupture < {int(prio.horizon_hours.iloc[0])} h)",
+                                                          min_value=0, max_value=1, format="percent"),
                 "bikes_to_move": st.column_config.NumberColumn("Vélos ±", format="%+d"),
                 "num_bikes_available": "Vélos", "capacity": "Capacité",
                 "fill_ratio_now": st.column_config.ProgressColumn("Remplissage", min_value=0, max_value=1,
@@ -774,3 +779,29 @@ with tabs[7]:
               <b>{r.champion_mae_before:.4f}</b> · baseline {r.baseline_mae:.4f}<br/>
               {'Le challenger devient le nouveau champion.' if ok else 'Le champion actuel reste en production.'}
               </div></div>""", unsafe_allow_html=True)
+
+    section("Fiabilité des alertes (backtest sur l'historique réel)",
+            "Quand le système annonce « vide / pleine dans 2 h », avait-il raison ? Vérité terrain = flux GBFS "
+            "enregistré toutes les 5 min ; stations déjà en rupture exclues ; seuil choisi sur la 1re moitié.")
+    if not has("gold_alert_backtest"):
+        st.info("Pas encore de backtest : `python scripts/gbfs_history.py` (≥ 3 h) puis "
+                "`python scripts/backtest_alerts.py`.")
+    else:
+        bt = t("gold_alert_backtest")
+        names = {"naive": "Stock bas (sans prévision)", "point": "Prévision ponctuelle", "probabilistic": "Probabiliste"}
+        c1, c2 = st.columns(2)
+        for col, event, title in ((c1, "empty", "Alerte « vide »"), (c2, "full", "Alerte « pleine »")):
+            b = bt[bt.event == event].assign(methode=lambda d: d.method.map(names))
+            long = b.melt(id_vars="methode", value_vars=["precision", "recall", "pr_auc"], var_name="mesure")
+            long["mesure"] = long.mesure.map({"precision": "Précision", "recall": "Rappel", "pr_auc": "PR-AUC"})
+            fig = px.bar(long, x="mesure", y="value", color="methode", barmode="group", text_auto=".0%",
+                         color_discrete_map={names["naive"]: BAR_SOFT, names["point"]: SKY,
+                                             names["probabilistic"]: INDIGO},
+                         labels={"mesure": "", "value": "", "methode": ""}, title=title)
+            fig.update_yaxes(range=[0, 1], tickformat=".0%")
+            with col:
+                show(fig, 330)
+                r = b.set_index("method").loc["probabilistic"]
+                st.caption(f"{int(r.n):,} fenêtres station × 2 h sur {int(r.origins_test)} instants de test · "
+                           f"prévalence {r.prevalence:.1%} · seuil P ≥ {r.p_threshold:.2f}"
+                           + (" · ⚠ historique court : seuil réglé et testé sur la même période" if r.same_period else ""))

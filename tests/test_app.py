@@ -111,3 +111,29 @@ def test_live_endpoint_returns_503_when_feed_is_down(tables, monkeypatch):
     monkeypatch.setattr(requests, "get", boom)
     r = TestClient(api.app).get("/v1/stations/6140.05/live")
     assert r.status_code == 503
+
+
+# ------------------------------------------------------------------ API hardening (v1.1)
+def test_api_validates_inputs_and_tags_every_response(tables):
+    client = TestClient(api.app)
+    r = client.get("/health", headers={"X-Request-ID": "abc123"})
+    assert r.headers["X-Request-ID"] == "abc123" and r.headers["Server-Timing"].startswith("app;dur=")
+    assert client.get("/v1/priority", params={"risk": "not-a-label"}).status_code == 422
+    assert client.get("/v1/predict", params={"station_id": "6140.05", "temperature_c": 80}).status_code == 422
+    assert client.get("/v1/predict", params={"station_id": "6140.05", "precipitation_mm": -1}).status_code == 422
+
+
+def test_missing_table_and_broken_contract_answer_503(tables, monkeypatch):
+    client = TestClient(api.app)
+    r = client.get("/v1/alerts/backtest")                       # table not built in the fixture
+    assert r.status_code == 503 and r.json()["detail"] == "table not available"
+    bad = pd.DataFrame({"date": pd.to_datetime(["2026-10-01", "2026-10-01"]).date, "trips": [100, -5],
+                        "avg_duration_min": [10.0, 14.0], "member_share_pct": [80.0, 140.0],
+                        "ebike_share_pct": [70.0, 74.0]})
+    path = tables / "gold_daily_kpis" / "part-0.parquet"
+    bad.to_parquet(path)
+    import os
+    os.utime(path, (os.path.getmtime(path) + 10,) * 2)          # new table version -> re-validated
+    r = client.get("/v1/kpis")
+    assert r.status_code == 503 and r.json()["detail"] == "data contract violated"
+    assert "trips" in r.json()["reason"] and "member_share_pct" in r.json()["reason"]

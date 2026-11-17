@@ -11,12 +11,20 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - run: pip install ruff pytest requests pandas pyarrow fastapi httpx
-      - name: Lint (scripts, notebooks, tests)
-        run: ruff check scripts notebooks tests docs app
-      - name: Unit tests
-        run: pytest -q tests
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements/serving.txt
+      - run: pip install -r requirements/serving.txt pytest ruff httpx
+      - name: Lint
+        run: ruff check .
+      - name: Tests (unit + API + contracts; integration tests skip without the Gold tables)
+        run: pytest -q
+      - name: Build the smartbike wheel (attached to the Fabric Environment)
+        run: pip wheel . --no-deps -w dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smartbike-wheel
+          path: dist/*.whl
       - name: Validate JSON (pipeline, policies)
         run: |
           for f in pipeline/*.json security/policies/*.json infra/*.json powerbi/*.json; do python -m json.tool "$f" > /dev/null && echo "ok $f"; done
@@ -30,8 +38,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
       - name: Fabric .ipynb are regenerated from the .py sources
         run: |
           python scripts/py_to_ipynb.py
           git diff --exit-code notebooks/fabric || (echo "run scripts/py_to_ipynb.py and commit" && exit 1)
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the serving image
+        run: docker build -t smartbike-ai:ci .
+      - name: Smoke test (no data mounted -> liveness only)
+        run: |
+          docker run -d --name api -p 8000:8000 smartbike-ai:ci
+          for i in $(seq 1 30); do curl -fsS localhost:8000/health && break; sleep 2; done
+          curl -fsS localhost:8000/health | grep -q '"status":"ok"'
+          docker inspect --format '{{.Config.User}}' api | grep -q smartbike   # never root

@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smartbike"
+version = "1.1.0"
+description = "SmartBike AI domain logic: model features, stock-out risk, rebalancing truck routing, data contracts."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "pandas>=2.2"]
+
+[project.optional-dependencies]
+routing = ["ortools>=9.10"]
+contracts = ["pandera>=0.20"]
+
+[tool.setuptools.packages.find]
+include = ["smartbike*"]
+
+# Fabric: `pip wheel . --no-deps -w dist` then upload dist/smartbike-1.1.0-py3-none-any.whl to the Fabric
+# Environment (Custom libraries) attached to the notebooks; add ortools / pandera from PyPI in the same Environment.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]

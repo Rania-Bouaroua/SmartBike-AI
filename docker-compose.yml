@@ -1,0 +1,34 @@
+# Local production-like stack:  docker compose up --build
+#   API  -> http://localhost:8000/docs      operator app -> http://localhost:8501
+#   (other host ports: API_PORT=18000 APP_PORT=18501 docker compose up)
+# Prerequisites on the host: Gold tables in data/lakehouse/Tables (notebooks 01-05) and the model bundle
+# (python scripts/export_models.py). Optional: SMARTBIKE_API_KEY in a .env file to protect the API.
+services:
+  api:
+    build: .
+    image: smartbike-ai:latest
+    ports: ["${API_PORT:-8000}:8000"]
+    environment:
+      SMARTBIKE_API_KEY: ${SMARTBIKE_API_KEY:-}
+    volumes:
+      - ./data/lakehouse/Tables:/srv/smartbike/data/lakehouse/Tables:ro
+      - ./models/serving:/srv/smartbike/models/serving:ro
+    restart: unless-stopped
+
+  dashboard:
+    image: smartbike-ai:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["streamlit", "run", "app/dashboard.py", "--server.port", "8501", "--server.address", "0.0.0.0",
+              "--server.headless", "true"]
+    ports: ["${APP_PORT:-8501}:8501"]
+    volumes:
+      - ./data/lakehouse/Tables:/srv/smartbike/data/lakehouse/Tables:ro
+      - ./models/serving:/srv/smartbike/models/serving:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+    restart: unless-stopped

@@ -12,6 +12,7 @@ import pathlib
 import numpy as np
 import pandas as pd
 
+from smartbike.contracts import validate
 from smartbike.features import build_feature_grid
 
 ROOT = pathlib.Path(os.environ.get("SMARTBIKE_ROOT", pathlib.Path(__file__).resolve().parents[1]))
@@ -30,7 +31,10 @@ def table_version(name: str) -> float:
 
 @functools.lru_cache(maxsize=64)
 def _read_table(name: str, columns: tuple[str, ...] | None, version: float) -> pd.DataFrame:
-    return pd.read_parquet(TABLES / name, columns=list(columns) if columns else None)
+    df = pd.read_parquet(TABLES / name, columns=list(columns) if columns else None)
+    if columns is None and os.environ.get("SMARTBIKE_VALIDATE", "1") == "1":
+        validate(name, df)          # once per table version (cached); raises DataContractError
+    return df
 
 
 def table(name: str, columns: tuple[str, ...] | None = None) -> pd.DataFrame:
@@ -72,8 +76,20 @@ def available_tables() -> list[str]:
 
 @functools.lru_cache(maxsize=2)
 def model(target: str):
-    """Production model (MLflow alias `champion`), falling back to the latest registered version."""
+    """Production model.
+
+    * SMARTBIKE_MODEL_DIR set (containers, App Service): the exported serving bundle (scripts/export_models.py),
+      identified as `serving:<registered model>/v<version>` from its manifest;
+    * otherwise the MLflow registry alias `champion`, falling back to the latest registered version.
+    """
     import mlflow
+
+    bundle = os.environ.get("SMARTBIKE_MODEL_DIR")
+    if bundle:
+        import json
+        info = json.loads((pathlib.Path(bundle) / "manifest.json").read_text(encoding="utf-8"))["models"][target]
+        return (mlflow.sklearn.load_model(str(pathlib.Path(bundle) / target)),
+                f"serving:{info['registered_model']}/v{info['version']}")
     mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", f"sqlite:///{ROOT.as_posix()}/mlruns.db"))
     for uri in (f"models:/{MODEL_NAME}_{target}@champion", f"models:/{MODEL_NAME}_{target}/latest"):
         try:

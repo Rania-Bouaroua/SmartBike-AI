@@ -21,3 +21,10 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 .ruff_cache/
+
+# exported serving bundle (built by scripts/export_models.py)
+models/
+# python packaging
+dist/
+build/
+*.egg-info/
