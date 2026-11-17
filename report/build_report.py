@@ -395,7 +395,17 @@ add_table([["Extension", "Réalisation", "Preuve"],
             "scripts/alert_monitor.py, kql/03_alerts.kql"],
            ["Gouvernance avancée", "policy-as-code (3 Azure Policies), classification personnalisée Purview "
                                    "SmartBike.GeoTrip, lignage, rétention", "security/"],
-           ["Agrégations avancées", "fenêtres, CUBE, percentiles, O-D, spatial, rééquilibrage", "notebook 05"]])
+           ["Agrégations avancées", "fenêtres, CUBE, percentiles, O-D, spatial, rééquilibrage", "notebook 05"],
+           ["Risque probabiliste", "Monte Carlo sur demande de Poisson, capacité utilisable, P(vide/pleine)",
+            "smartbike/risk.py"],
+           ["Tournées camion", "collecte-livraison avec capacité, OR-Tools, +59 % de vélos déplacés vs liste",
+            "smartbike/routing.py"],
+           ["Fiabilité des alertes", "backtest walk-forward sur l'historique GBFS réel, calibration",
+            "scripts/backtest_alerts.py"],
+           ["Ingénierie", "package testé, contrats de données, API durcie, Docker non-root, benchmark, CI",
+            "Dockerfile, tests/, docs/benchmark.md"]])
+doc.add_heading("Décisions d'architecture (ADR)", level=2)
+render_md(D / "decisions.md", shift=2)
 # 10 -----------------------------------------------------------------
 page_break()
 doc.add_heading("10. Coûts, limites, passage à l'échelle et suite", level=1)
@@ -409,7 +419,7 @@ doc.add_heading("Améliorations envisagées", level=2)
 for s_ in ["Collecter l'historique GBFS plusieurs mois pour modéliser directement le stock (et non plus les flux).",
            "Corriger la demande censurée : estimer la demande perdue quand une station est vide.",
            "Météo par zone (plusieurs points) et calendrier d'événements (concerts, matchs, jours fériés).",
-           "Optimiser les tournées de camions (problème de tournées de véhicules) à partir du score de priorité.",
+           "Tournées camion : fenêtres horaires par station et replanification en continu pendant la tournée.",
            "Déplacer le score dans l'Eventhouse (modèle ONNX) pour une latence inférieure à la minute."]:
     doc.add_paragraph(s_, style="List Bullet")
 # 11 -----------------------------------------------------------------

@@ -76,6 +76,19 @@ Catégoriser `lat` / `lon` en *Latitude* / *Longitude* ; `station_name` en *Plac
 * **Barres** : top 15 liaisons ; **nuage** `avg_dist_km` × `median_duration_min` (taille = `trips`).
 * **Matrice** `gold_usage_cube` filtrée sur `grouping_level = 0` + ligne de totaux (`TOTAL`) : qui roule quand, sur quel vélo.
 
+### Page 9 — « Tournée camion » · *Quels camions vont où, avec combien de vélos ?*
+* **Carte** (Azure Maps, couche *Path*) : `gold_truck_routes` filtrée sur `method = "optimisé (OR-Tools)"`, une couleur
+  par `truck`, ordre = `stop` ; info-bulle : station, `delta` (+ livrer / − retirer), `load_after`.
+* **Cartes KPI** depuis `gold_truck_plan_kpis` : `[Vélos déplacés (optimisé)]`, `[Gain vs liste de priorité %]`,
+  `[Urgence couverte]`, `[Km (optimisé)]`.
+* **Tableau** feuille de route : truck, stop, station, action, vélos, `minutes_cum`.
+
+### Page 10 — « Fiabilité des alertes » · *Quand le système annonce une rupture, a-t-il raison ?*
+* **Barres groupées** `gold_alert_backtest` : précision / rappel / PR-AUC par `method`, filtre `event` (vide / pleine).
+* **Courbe** `gold_alert_calibration` : `predicted` (x) vs `observed` (y), une série par `event`, + diagonale.
+* **Texte** : horizon, nombre d'instants de test, prévalence (une alerte « au hasard » aurait une précision égale à
+  la prévalence).
+
 Thème : importer [`smartbike_theme.json`](smartbike_theme.json) (*Affichage → Thèmes → Parcourir*) pour des couleurs cohérentes
 avec les figures du rapport et l'application Streamlit (rouge = vide, bleu foncé = saturée, vert = ok).
 

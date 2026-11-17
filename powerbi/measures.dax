@@ -129,3 +129,27 @@ Départs (moy. glissante 7 j) = AVERAGE ( gold_station_daily[dep_rolling_7d] )
 // ---------- MLOps ----------
 Modèle en production (version) =
 CALCULATE ( MAX ( gold_model_promotion_log[challenger_version] ), gold_model_promotion_log[promoted] = TRUE () )
+
+// ---------- Tournée camion (page 9, gold_truck_plan_kpis) ----------
+Vélos déplacés (optimisé) =
+CALCULATE ( MAX ( gold_truck_plan_kpis[bikes_moved] ), gold_truck_plan_kpis[method] = "optimisé (OR-Tools)" )
+
+Vélos déplacés (liste) =
+CALCULATE ( MAX ( gold_truck_plan_kpis[bikes_moved] ), gold_truck_plan_kpis[method] = "greedy (liste de priorité)" )
+
+Gain vs liste de priorité % = DIVIDE ( [Vélos déplacés (optimisé)], [Vélos déplacés (liste)] ) - 1
+
+Urgence couverte =
+CALCULATE ( MAX ( gold_truck_plan_kpis[value_share] ), gold_truck_plan_kpis[method] = "optimisé (OR-Tools)" )
+
+Km (optimisé) = CALCULATE ( MAX ( gold_truck_plan_kpis[km] ), gold_truck_plan_kpis[method] = "optimisé (OR-Tools)" )
+
+// ---------- Fiabilité des alertes (page 10, gold_alert_backtest) ----------
+Précision alerte = AVERAGE ( gold_alert_backtest[precision] )
+
+Rappel alerte = AVERAGE ( gold_alert_backtest[recall] )
+
+PR-AUC alerte = AVERAGE ( gold_alert_backtest[pr_auc] )
+
+Prévalence rupture = AVERAGE ( gold_alert_backtest[prevalence] )
+
