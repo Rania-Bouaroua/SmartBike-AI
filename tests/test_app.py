@@ -73,3 +73,41 @@ def test_alert_rules_fire_on_bad_quality_and_bad_model(tables, monkeypatch):
     monkeypatch.setattr(mod, "T", tables)
     rules = {a["rule"] for a in mod.check_quality() + mod.check_model()}
     assert rules == {"DQ-1", "ML-1"}          # 97 % valid < 98 %, MAE 1.2 >= baseline 1.1 ; match 99.9 % is fine
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+def test_live_status_flags_empty_and_full_and_ignores_unknown_stations(tables, monkeypatch):
+    import requests
+
+    payload = {"data": {"stations": [
+        {"station_id": "uuid-1", "num_bikes_available": 0, "num_docks_available": 50, "is_renting": 1,
+         "last_reported": 1_790_000_000},
+        {"station_id": "uuid-unknown", "num_bikes_available": 3, "num_docks_available": 0, "is_renting": 1,
+         "last_reported": 1_790_000_000},
+    ]}}
+    monkeypatch.setattr(requests, "get", lambda *a, **k: _FakeResponse(payload))
+    live = common.live_status()
+    assert list(live.station_id) == ["6140.05"]          # unknown GBFS station dropped by the join
+    assert bool(live.is_empty.iloc[0]) and not bool(live.is_full.iloc[0])
+    assert str(live.last_reported_utc.iloc[0].tz) == "UTC"
+
+
+def test_live_endpoint_returns_503_when_feed_is_down(tables, monkeypatch):
+    import requests
+
+    def boom(*a, **k):
+        raise requests.ConnectionError("offline")
+
+    monkeypatch.setattr(requests, "get", boom)
+    r = TestClient(api.app).get("/v1/stations/6140.05/live")
+    assert r.status_code == 503

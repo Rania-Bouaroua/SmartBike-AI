@@ -26,6 +26,31 @@ def table(name: str, columns: tuple[str, ...] | None = None) -> pd.DataFrame:
     return pd.read_parquet(path, columns=list(columns) if columns else None)
 
 
+GBFS_STATUS_URL = "https://gbfs.citibikenyc.com/gbfs/en/station_status.json"
+
+
+def live_status(timeout: float = 20) -> pd.DataFrame:
+    """Current availability of every station, straight from the public GBFS feed, joined to our station ids.
+
+    Returns one row per station with bikes/docks available, `is_empty` / `is_full` flags and `last_reported_utc`.
+    Raises `requests.RequestException` when the feed is unreachable (callers decide how to degrade).
+    """
+    import requests
+
+    resp = requests.get(GBFS_STATUS_URL, timeout=timeout)
+    resp.raise_for_status()
+    live = pd.DataFrame(resp.json()["data"]["stations"])
+    live = live[["station_id", "num_bikes_available", "num_docks_available", "is_renting", "last_reported"]].rename(
+        columns={"station_id": "gbfs_station_id"})
+    ref = table("silver_stations")[["station_id", "gbfs_station_id", "station_name", "capacity"]]
+    out = ref.merge(live, on="gbfs_station_id", how="inner")
+    out["last_reported_utc"] = pd.to_datetime(out.last_reported, unit="s", utc=True)
+    active = out.is_renting == 1
+    out["is_empty"] = active & (out.num_bikes_available == 0)
+    out["is_full"] = active & (out.num_docks_available == 0)
+    return out.drop(columns="last_reported")
+
+
 def available_tables() -> list[str]:
     return sorted(p.name for p in TABLES.iterdir() if p.is_dir()) if TABLES.exists() else []
 

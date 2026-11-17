@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import secrets
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pandas as pd
 import requests
@@ -75,16 +75,19 @@ def station(station_id: str) -> dict:
 def station_live(station_id: str) -> dict:
     """Current availability straight from the public GBFS feed."""
     st = common.table("silver_stations")
-    row = st[st.station_id == station_id]
-    if row.empty:
+    if not (st.station_id == station_id).any():
         raise HTTPException(404, f"unknown station {station_id}")
-    gbfs = requests.get("https://gbfs.citibikenyc.com/gbfs/en/station_status.json", timeout=20).json()
-    status = next((s for s in gbfs["data"]["stations"] if s["station_id"] == row.iloc[0].gbfs_station_id), None)
-    if status is None:
+    try:
+        live = common.live_status()
+    except requests.RequestException as exc:
+        raise HTTPException(503, f"GBFS feed unavailable: {exc}") from exc
+    row = live[live.station_id == station_id]
+    if row.empty:
         raise HTTPException(404, "station not in the live feed")
-    return {"station_id": station_id, "station_name": row.iloc[0].station_name,
-            "bikes_available": status["num_bikes_available"], "docks_available": status["num_docks_available"],
-            "last_reported_utc": datetime.fromtimestamp(status["last_reported"], tz=UTC).isoformat()}
+    r = row.iloc[0]
+    return {"station_id": station_id, "station_name": r.station_name,
+            "bikes_available": int(r.num_bikes_available), "docks_available": int(r.num_docks_available),
+            "last_reported_utc": r.last_reported_utc.isoformat()}
 
 
 @app.get("/v1/predict", dependencies=[Depends(require_key)])

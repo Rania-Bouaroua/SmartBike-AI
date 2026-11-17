@@ -132,6 +132,30 @@ div[data-testid="stPlotlyChart"], div[data-testid="stDeckGlJsonChart"], div[data
   font-family:'JetBrains Mono',monospace; }
 .legend { display:flex; flex-wrap:wrap; gap:14px; color:var(--muted); font-size:.82rem; font-weight:600; margin:6px 0 10px; }
 .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+
+/* operator sidebar */
+.sb-h { font-family:'JetBrains Mono',monospace; font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--muted); margin:18px 0 8px; }
+.sb-fresh { padding:10px 12px; border-radius:12px; border:1px solid var(--line); font-size:.84rem; color:var(--text); }
+.sb-fresh span { color:var(--muted); font-size:.76rem; }
+.sb-fresh .sb-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:7px; }
+.sb-fresh.ok .sb-dot { background:#22C55E; } .sb-fresh.old .sb-dot { background:#C9A54A; }
+.sb-fresh.old { border-color:rgba(201,165,74,.55); }
+.sb-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+.sb-grid div { padding:10px; border-radius:12px; border:1px solid var(--line); background:var(--bg); }
+.sb-grid b { display:block; font-family:'Space Grotesk',sans-serif; font-size:1.35rem; color:var(--text);
+  line-height:1.1; }
+.sb-grid span { font-size:.72rem; color:var(--muted); font-weight:600; }
+.sb-row { display:flex; align-items:center; gap:9px; padding:7px 0; border-bottom:1px solid var(--line); }
+.sb-row i { flex:none; width:8px; height:8px; border-radius:50%; }
+.sb-row div { flex:1; min-width:0; }
+.sb-row b { display:block; font-size:.8rem; color:var(--text); white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; }
+.sb-row span { font-size:.7rem; color:var(--muted); }
+.sb-row em { font-style:normal; font-family:'JetBrains Mono',monospace; font-weight:600; font-size:.85rem; }
+.sb-note { font-size:.82rem; color:var(--text); line-height:1.45; padding:10px 12px; border-radius:12px;
+  border:1px solid var(--line); }
+.sb-note span { color:var(--muted); font-size:.74rem; }
 </style>
 """.replace("VARS", _vars), unsafe_allow_html=True)
 
@@ -180,6 +204,114 @@ def fmt(n: float) -> str:
     return f"{n:,.0f}".replace(",", " ")
 
 
+def ago(delta: pd.Timedelta) -> str:
+    minutes = int(delta.total_seconds() // 60)
+    if minutes < 1:
+        return "à l'instant"
+    if minutes < 60:
+        return f"il y a {minutes} min"
+    hours = minutes // 60
+    return f"il y a {hours} h" if hours < 48 else f"il y a {hours // 24} jours"
+
+
+@st.cache_data(ttl=60, show_spinner="Lecture du flux GBFS…")
+def live_now() -> pd.DataFrame:
+    return common.live_status(timeout=10)
+
+
+FR_DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+FRESH_MIN = 60  # a forecast snapshot older than this is flagged as stale
+
+
+def sidebar_operator_panel(prio: pd.DataFrame | None) -> None:
+    """Operator panel: data freshness, what to do now, top urgencies, today's truck need, live check."""
+    now = pd.Timestamp.now(tz=common.NY_TZ)
+
+    # 1. freshness of the forecast snapshot (notebook 04)
+    st.markdown('<div class="sb-h">Relevé utilisé</div>', unsafe_allow_html=True)
+    if prio is None:
+        st.warning("Aucun relevé : lancer le notebook 04.")
+        return
+    snap_ts = pd.Timestamp(prio.snapshot_time_local.iloc[0])
+    snap_ts = snap_ts.tz_convert(common.NY_TZ) if snap_ts.tzinfo else snap_ts.tz_localize(common.NY_TZ)
+    age = now - snap_ts
+    fresh = age <= pd.Timedelta(minutes=FRESH_MIN)
+    st.markdown(f'<div class="sb-fresh {"ok" if fresh else "old"}"><span class="sb-dot"></span>'
+                f'<b>{snap_ts:%d/%m %H:%M}</b> (New York) · {ago(age)}<br/>'
+                f'<span>prévision à {int(prio.horizon_hours.iloc[0])} h · {len(prio)} stations relevées</span></div>',
+                unsafe_allow_html=True)
+    if not fresh:
+        st.caption("Relevé ancien : relancer le notebook 04 (ou le pipeline) pour une tournée à jour.")
+
+    # 2. what to do now
+    todo = prio[prio.risk != "ok"]
+    add = int(prio.loc[prio.bikes_to_move > 0, "bikes_to_move"].sum())
+    remove = int(-prio.loc[prio.bikes_to_move < 0, "bikes_to_move"].sum())
+    ok_n = int((prio.risk == "ok").sum())
+    st.markdown('<div class="sb-h">À faire maintenant</div>', unsafe_allow_html=True)
+    st.markdown(f"""<div class="sb-grid">
+      <div><b>{fmt(len(todo))}</b><span>stations à visiter</span></div>
+      <div><b>{fmt(int((todo.risk.isin(['vide maintenant', 'saturee maintenant'])).sum()))}</b>
+           <span>déjà en rupture</span></div>
+      <div><b style="color:{EMERALD}">+{fmt(add)}</b><span>vélos à livrer</span></div>
+      <div><b style="color:{ROSE}">−{fmt(remove)}</b><span>vélos à retirer</span></div>
+    </div>""", unsafe_allow_html=True)
+    st.progress(ok_n / len(prio), text=f"{fmt(ok_n)} / {fmt(len(prio))} stations OK ({ok_n / len(prio):.0%})")
+
+    # 3. top urgencies
+    st.markdown('<div class="sb-h">5 urgences</div>', unsafe_allow_html=True)
+    rows = []
+    for _, r in todo.sort_values("priority_rank").head(5).iterrows():
+        sign = f"+{int(r.bikes_to_move)}" if r.bikes_to_move > 0 else str(int(r.bikes_to_move))
+        color = RISK[r.risk][2]
+        rows.append(f'<div class="sb-row"><i style="background:{color}"></i><div><b>{r.station_name}</b>'
+                    f'<span>{RISK[r.risk][0]} · {int(r.num_bikes_available)}/{int(r.capacity)} vélos</span></div>'
+                    f'<em style="color:{EMERALD if r.bikes_to_move > 0 else ROSE}">{sign}</em></div>')
+    st.markdown("".join(rows), unsafe_allow_html=True)
+    st.caption("Liste complète : onglet « Interventions live ».")
+
+    # 4. today's truck need, from the historical rebalancing table (same weekday)
+    if has("gold_rebalancing_daily"):
+        rd = t("gold_rebalancing_daily")
+        dow = pd.to_datetime(rd.date).dt.dayofweek
+        same = rd[dow == now.dayofweek]
+        if not same.empty:
+            st.markdown('<div class="sb-h">Camion aujourd\'hui</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="sb-note">Un <b>{FR_DAYS[now.dayofweek]}</b>, il faut en moyenne '
+                        f'<b>{fmt(same.forced_moves.mean())} vélos</b> à déplacer sur '
+                        f'<b>{fmt(same.stations_needing_truck.mean())} stations</b> '
+                        f'(max observé {fmt(same.forced_moves.max())}).</div>', unsafe_allow_html=True)
+
+    # 5. live check against the public feed (no forecast, just current state)
+    st.markdown('<div class="sb-h">État en direct</div>', unsafe_allow_html=True)
+    if st.button("Vérifier maintenant", width="stretch", type="primary"):
+        st.session_state["live_check"] = True
+    if st.session_state.get("live_check"):
+        try:
+            live = live_now()
+            last = live.last_reported_utc.max().tz_convert(common.NY_TZ)
+            st.markdown(f'<div class="sb-note"><b style="color:{ROSE}">{fmt(live.is_empty.sum())}</b> vides · '
+                        f'<b style="color:{INK}">{fmt(live.is_full.sum())}</b> pleines sur {fmt(len(live))} stations'
+                        f'<br/><span>flux mis à jour {last:%H:%M} (New York)</span></div>', unsafe_allow_html=True)
+        except Exception as exc:  # noqa: BLE001 - network errors must not break the app
+            st.error(f"Flux GBFS injoignable ({type(exc).__name__}).")
+
+    # 6. reference
+    with st.expander("Architecture"):
+        st.markdown("""
+- **Azure** · ADLS Gen2 · Key Vault · Policy
+- **Fabric** · Lakehouse Delta (Bronze → Silver → Gold)
+- **Spark** · 5 notebooks · agrégations avancées
+- **Temps réel** · Eventstream → KQL → Activator
+- **ML** · HistGradientBoosting + MLflow
+""")
+    with st.expander("Outils"):
+        st.markdown("- API REST : [localhost:8000/docs](http://localhost:8000/docs)\n"
+                    "- Alertes : `python scripts/alert_monitor.py`\n"
+                    "- Rapport : `report/SmartBike_AI_Rapport_Technique.pdf`")
+    st.caption("Projet CDDA 2026-2027 · Pr. Ibrahim Rahhal")
+
+
 # ------------------------------------------------------------------ header + sidebar
 daily = t("gold_daily_kpis").sort_values("date")
 daily["date"] = pd.to_datetime(daily["date"])
@@ -202,21 +334,7 @@ st.markdown(f"""
 with st.sidebar:
     if LOGO.exists():
         st.image(str(ROOT / "assets" / ("logo_full_dark.png" if DARK else "logo_full.png")), width="stretch")
-    st.markdown("#### Plateforme")
-    st.markdown("""
-- **Azure** · ADLS Gen2 · Key Vault · Policy
-- **Fabric** · Lakehouse Delta (Bronze → Silver → Gold)
-- **Spark** · 5 notebooks · agrégations avancées
-- **Temps réel** · Eventstream → KQL → Activator
-- **ML** · HistGradientBoosting + MLflow
-""")
-    st.markdown("#### Réseau")
-    if prio is not None:
-        ok_pct = (prio.risk == "ok").mean() * 100
-        st.progress(ok_pct / 100, text=f"Santé du réseau : {ok_pct:.0f} % des stations OK")
-    st.caption(f"{len(t('silver_stations'))} stations · {len(common.available_tables())} tables Gold/Silver")
-    st.markdown("---")
-    st.caption("Projet CDDA 2026-2027 · Pr. Ibrahim Rahhal")
+    sidebar_operator_panel(prio)
 
 tabs = st.tabs(["Vue d'ensemble", "Interventions live", "Rééquilibrage", "Flux & zones",
                 "Usages & météo", "Prévision", "Modèle"])
