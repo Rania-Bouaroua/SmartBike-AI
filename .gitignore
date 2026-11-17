@@ -1,0 +1,23 @@
+# data never goes to Git (public sources are re-downloadable with scripts/01-03)
+data/
+logs/
+mlruns/
+mlruns.db
+mlartifacts/
+spark-warehouse/
+metastore_db/
+derby.log
+# secrets
+.env
+*.env
+!config/settings.example.env
+*.pem
+*.pfx
+local.settings.json
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ipynb_checkpoints/
+.ruff_cache/

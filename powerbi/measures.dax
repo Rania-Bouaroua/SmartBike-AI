@@ -1,0 +1,131 @@
+// =====================================================================
+// SmartBike AI - DAX measures (semantic model sm_smartbike, Direct Lake)
+// Create them in a dedicated "_Mesures" table.
+// =====================================================================
+
+// ---------- Usage (page 1) ----------
+Total trajets = SUM ( gold_daily_kpis[trips] )
+
+Trajets / jour (moy.) = AVERAGE ( gold_daily_kpis[trips] )
+
+% abonnés =
+DIVIDE (
+    SUMX ( gold_daily_kpis, gold_daily_kpis[trips] * gold_daily_kpis[member_share_pct] / 100 ),
+    [Total trajets]
+)
+
+% vélos électriques =
+DIVIDE (
+    SUMX ( gold_daily_kpis, gold_daily_kpis[trips] * gold_daily_kpis[ebike_share_pct] / 100 ),
+    [Total trajets]
+)
+
+Durée moyenne (min) =
+DIVIDE (
+    SUMX ( gold_daily_kpis, gold_daily_kpis[trips] * gold_daily_kpis[avg_duration_min] ),
+    [Total trajets]
+)
+
+Trajets / jour semaine =
+CALCULATE ( [Trajets / jour (moy.)], gold_daily_kpis[is_weekend] = FALSE () )
+
+Trajets / jour week-end =
+CALCULATE ( [Trajets / jour (moy.)], gold_daily_kpis[is_weekend] = TRUE () )
+
+Écart week-end % = DIVIDE ( [Trajets / jour week-end] - [Trajets / jour semaine], [Trajets / jour semaine] )
+
+// ---------- Stations (page 3) ----------
+Départs = SUM ( gold_station_hourly[departures] )
+Arrivées = SUM ( gold_station_hourly[arrivals] )
+Solde net (arrivées - départs) = [Arrivées] - [Départs]
+
+Stations qui se vident le matin =
+CALCULATE ( COUNTROWS ( gold_station_profile ), gold_station_profile[am_peak_risk] = "risque vide" )
+
+Stations qui saturent le matin =
+CALCULATE ( COUNTROWS ( gold_station_profile ), gold_station_profile[am_peak_risk] = "risque saturee" )
+
+// ---------- Météo (page 4) ----------
+Trajets/h sec (jour semaine) =
+CALCULATE (
+    AVERAGE ( gold_weather_effect[avg_trips_per_hour] ),
+    gold_weather_effect[rain_bucket] = "1. sec",
+    gold_weather_effect[daypart] = "jour 7h-19h",
+    gold_weather_effect[is_weekend] = FALSE ()
+)
+
+Trajets/h pluie (jour semaine) =
+CALCULATE (
+    DIVIDE (
+        SUMX ( gold_weather_effect, gold_weather_effect[avg_trips_per_hour] * gold_weather_effect[hours] ),
+        SUM ( gold_weather_effect[hours] )
+    ),
+    gold_weather_effect[rain_bucket] <> "1. sec",
+    gold_weather_effect[daypart] = "jour 7h-19h",
+    gold_weather_effect[is_weekend] = FALSE ()
+)
+
+Baisse due à la pluie % = DIVIDE ( [Trajets/h pluie (jour semaine)] - [Trajets/h sec (jour semaine)], [Trajets/h sec (jour semaine)] )
+
+// ---------- Interventions (page 5) ----------
+Stations vides maintenant =
+CALCULATE ( COUNTROWS ( gold_station_priority ), gold_station_priority[risk] = "vide maintenant" )
+
+Stations saturées maintenant =
+CALCULATE ( COUNTROWS ( gold_station_priority ), gold_station_priority[risk] = "saturee maintenant" )
+
+Stations à risque (horizon) =
+CALCULATE ( COUNTROWS ( gold_station_priority ), gold_station_priority[risk] IN { "risque vide", "risque saturee" } )
+
+Vélos à déplacer = SUMX ( gold_station_priority, ABS ( gold_station_priority[bikes_to_move] ) )
+
+Horodatage snapshot = "État du réseau à " & FORMAT ( MAX ( gold_station_priority[snapshot_time_local] ), "dd/mm/yyyy hh:nn" )
+
+Couleur risque =
+SWITCH (
+    SELECTEDVALUE ( gold_station_priority[risk] ),
+    "vide maintenant", "#C5221F",
+    "risque vide", "#F29900",
+    "saturee maintenant", "#7B1FA2",
+    "risque saturee", "#B39DDB",
+    "#9AA0A6"
+)
+
+// ---------- Fiabilité (page 6) ----------
+MAE modèle départs = CALCULATE ( MAX ( gold_ml_metrics[model_mae] ), gold_ml_metrics[target] = "departures" )
+MAE baseline départs = CALCULATE ( MAX ( gold_ml_metrics[baseline_mae] ), gold_ml_metrics[target] = "departures" )
+Gain vs baseline % = DIVIDE ( [MAE baseline départs] - [MAE modèle départs], [MAE baseline départs] )
+
+% lignes valides =
+DIVIDE (
+    CALCULATE ( SUM ( gold_data_quality[rows] ), gold_data_quality[check] = "valid" ),
+    CALCULATE ( SUM ( gold_data_quality[rows] ), gold_data_quality[table] = "trips", gold_data_quality[check] <> "duplicate_ride_id" )
+)
+
+
+// ---------- Rééquilibrage (page 7, notebook 05) ----------
+Déplacements forcés / jour = AVERAGE ( gold_rebalancing_daily[forced_moves] )
+
+% stations nécessitant un camion =
+DIVIDE (
+    SUM ( gold_rebalancing_daily[stations_needing_truck] ),
+    SUM ( gold_rebalancing_daily[stations] )
+)
+
+Jours avec camion = CALCULATE ( COUNTROWS ( gold_rebalancing_need ), gold_rebalancing_need[needs_truck] = TRUE () )
+
+// ---------- Flux (page 8) ----------
+Trajets liaison = SUM ( gold_od_flows[trips] )
+
+Part des 100 premières liaisons =
+VAR top100 = TOPN ( 100, gold_od_flows, gold_od_flows[trips], DESC )
+RETURN DIVIDE ( SUMX ( top100, gold_od_flows[trips] ), [Trajets liaison] )
+
+// ---------- Tendance (moyenne glissante et évolution, gold_station_daily) ----------
+Départs (moy. glissante 7 j) = AVERAGE ( gold_station_daily[dep_rolling_7d] )
+
+Évolution S-1 % = AVERAGE ( gold_station_daily[dep_wow_pct] ) / 100
+
+// ---------- MLOps ----------
+Modèle en production (version) =
+CALCULATE ( MAX ( gold_model_promotion_log[challenger_version] ), gold_model_promotion_log[promoted] = TRUE () )

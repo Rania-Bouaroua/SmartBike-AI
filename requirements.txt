@@ -1,0 +1,21 @@
+# local run / tests (Fabric runtime already provides pyspark, pandas, scikit-learn, mlflow)
+requests>=2.32
+pandas>=2.2
+pyarrow>=17
+pyspark>=4.0
+scikit-learn>=1.5
+mlflow>=3.0
+matplotlib>=3.9
+# real-time collector -> Eventstream + Key Vault
+azure-eventhub>=5.12
+azure-identity>=1.17
+azure-keyvault-secrets>=4.8
+# application (bonus): REST API + operator web app
+fastapi>=0.115
+uvicorn>=0.30
+streamlit>=1.40
+pydeck>=0.9
+# dev
+httpx>=0.27
+pytest>=8
+ruff>=0.6

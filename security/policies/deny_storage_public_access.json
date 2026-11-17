@@ -1,0 +1,21 @@
+{
+  "properties": {
+    "displayName": "SmartBike - Storage accounts must block public blob access and shared keys",
+    "description": "No anonymous container access and no account-key authentication: access only through Entra ID + RBAC.",
+    "mode": "Indexed",
+    "parameters": {},
+    "policyRule": {
+      "if": {
+        "allOf": [
+          { "field": "type", "equals": "Microsoft.Storage/storageAccounts" },
+          { "anyOf": [
+              { "field": "Microsoft.Storage/storageAccounts/allowBlobPublicAccess", "notEquals": "false" },
+              { "field": "Microsoft.Storage/storageAccounts/allowSharedKeyAccess", "notEquals": "false" },
+              { "field": "Microsoft.Storage/storageAccounts/minimumTlsVersion", "notEquals": "TLS1_2" }
+          ] }
+        ]
+      },
+      "then": { "effect": "deny" }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "properties": {
+    "displayName": "SmartBike - Allowed locations",
+    "description": "Data residency: resources of the project can only be deployed in the approved EU regions.",
+    "mode": "Indexed",
+    "parameters": {
+      "allowedLocations": { "type": "Array", "metadata": { "displayName": "Allowed locations", "strongType": "location" } }
+    },
+    "policyRule": {
+      "if": { "not": { "field": "location", "in": "[parameters('allowedLocations')]" } },
+      "then": { "effect": "deny" }
+    }
+  }
+}

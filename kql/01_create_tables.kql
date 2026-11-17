@@ -1,0 +1,63 @@
+// =====================================================================================
+// SmartBike AI - Eventhouse / KQL database: kqldb_smartbike
+// Run these management commands once in a KQL queryset (or let Eventstream create the
+// table, then run only the policies + materialized view).
+// =====================================================================================
+
+// 1. Raw events table (one row = one station state sent by scripts/gbfs_collector.py)
+.create-merge table StationStatus (
+    event_time: datetime,        // collector poll time (UTC)
+    station_id: string,          // GBFS UUID
+    short_name: string,          // = start_station_id in the trip archives (join key with the Lakehouse)
+    station_name: string,
+    lat: real,
+    lon: real,
+    capacity: int,
+    bikes_available: int,
+    ebikes_available: int,
+    docks_available: int,
+    bikes_disabled: int,
+    docks_disabled: int,
+    is_installed: int,
+    is_renting: int,
+    is_returning: int,
+    last_reported: datetime,     // time the station itself last reported (data freshness)
+    fill_ratio: real,            // bikes_available / capacity
+    poll_type: string            // "full" snapshot or "delta" (only changed stations)
+)
+
+// 2. JSON ingestion mapping used by the Eventstream -> Eventhouse destination
+.create-or-alter table StationStatus ingestion json mapping 'StationStatusMapping'
+```
+[
+  {"column":"event_time","path":"$.event_time","datatype":"datetime"},
+  {"column":"station_id","path":"$.station_id","datatype":"string"},
+  {"column":"short_name","path":"$.short_name","datatype":"string"},
+  {"column":"station_name","path":"$.station_name","datatype":"string"},
+  {"column":"lat","path":"$.lat","datatype":"real"},
+  {"column":"lon","path":"$.lon","datatype":"real"},
+  {"column":"capacity","path":"$.capacity","datatype":"int"},
+  {"column":"bikes_available","path":"$.bikes_available","datatype":"int"},
+  {"column":"ebikes_available","path":"$.ebikes_available","datatype":"int"},
+  {"column":"docks_available","path":"$.docks_available","datatype":"int"},
+  {"column":"bikes_disabled","path":"$.bikes_disabled","datatype":"int"},
+  {"column":"docks_disabled","path":"$.docks_disabled","datatype":"int"},
+  {"column":"is_installed","path":"$.is_installed","datatype":"int"},
+  {"column":"is_renting","path":"$.is_renting","datatype":"int"},
+  {"column":"is_returning","path":"$.is_returning","datatype":"int"},
+  {"column":"last_reported","path":"$.last_reported","datatype":"datetime"},
+  {"column":"fill_ratio","path":"$.fill_ratio","datatype":"real"},
+  {"column":"poll_type","path":"$.poll_type","datatype":"string"}
+]
+```
+
+// 3. Governance: granular events are kept 30 days (retention policy), last 7 days in hot cache (cost)
+.alter-merge table StationStatus policy retention softdelete = 30d recoverability = disabled
+.alter table StationStatus policy caching hot = 7d
+
+// 4. Materialized view: always-up-to-date latest state per station (cheap for dashboards)
+.create materialized-view with (backfill = true) LatestStationStatus on table StationStatus
+{
+    StationStatus
+    | summarize arg_max(event_time, *) by station_id
+}

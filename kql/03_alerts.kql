@@ -1,0 +1,124 @@
+// =====================================================================================
+// SmartBike AI - advanced real-time aggregations + alert rules (Eventhouse kqldb_smartbike)
+// Bonus: stored functions, an hourly materialized aggregate, "minutes empty" calculation,
+// hopping windows, forecasting with series_decompose_forecast, and the queries behind the
+// Activator (Reflex) alerts. Run section A once (management commands), the rest as queries.
+// =====================================================================================
+
+
+// ---------- A1. Hourly pre-aggregation (materialized view: kept up to date at ingestion time) ----------
+// Power BI DirectQuery / Real-Time Dashboard read this instead of millions of raw events.
+.create materialized-view with (backfill = true) StationHourly on table StationStatus
+{
+    StationStatus
+    | where is_installed == 1 and capacity > 0
+    | summarize samples      = count(),
+                avg_bikes    = avg(bikes_available),
+                min_bikes    = min(bikes_available),
+                max_bikes    = max(bikes_available),
+                avg_fill     = avg(fill_ratio),
+                empty_samples = countif(bikes_available == 0),
+                full_samples  = countif(docks_available == 0)
+            by station_id, short_name, station_name, hour = bin(event_time, 1h)
+}
+
+// ---------- A2. Stored functions (reusable building blocks, governed in one place) ----------
+.create-or-alter function with (docstring = "State of each station at a given time", folder = "SmartBike")
+StationStateAt(at: datetime) {
+    StationStatus
+    | where event_time between ((at - 30m) .. at) and is_installed == 1 and capacity > 0
+    | summarize arg_max(event_time, *) by station_id
+    | extend threshold = max_of(2, toint(capacity * 0.10))
+    | extend state = case(bikes_available == 0, "vide", docks_available == 0, "saturee",
+                          bikes_available <= threshold, "presque vide",
+                          docks_available <= threshold, "presque saturee", "ok")
+}
+
+.create-or-alter function with (docstring = "Minutes each station spent empty / full in a period", folder = "SmartBike")
+StationOutageMinutes(from_: datetime, to_: datetime) {
+    StationStatus
+    | where event_time between (from_ .. to_) and is_installed == 1
+    | project station_id, station_name, event_time, is_empty = bikes_available == 0, is_full = docks_available == 0
+    | order by station_id asc, event_time asc
+    // duration of each state = time until the next sample of the same station (capped at 5 min = data gap)
+    | extend next_time = iff(next(station_id) == station_id, next(event_time), to_)
+    | extend minutes = min_of(datetime_diff('second', next_time, event_time) / 60.0, 5.0)
+    | summarize minutes_empty = sumif(minutes, is_empty), minutes_full = sumif(minutes, is_full),
+                observed_minutes = sum(minutes) by station_id, station_name
+    | extend pct_time_empty = round(100.0 * minutes_empty / observed_minutes, 1),
+             pct_time_full  = round(100.0 * minutes_full  / observed_minutes, 1)
+}
+
+
+// ---------- Q8. Which stations were unavailable the longest today? (uses the function) ----------
+StationOutageMinutes(startofday(now()), now())
+| where observed_minutes > 60
+| top 20 by minutes_empty + minutes_full
+
+
+// ---------- Q9. HOPPING window: empty stations over a sliding 30-min window, step 5 min ----------
+// Each event is counted in the 6 windows it overlaps (smoother than tumbling bins).
+let window_size = 30m;
+let step = 5m;
+StationStatus
+| where event_time > ago(6h) and is_installed == 1 and bikes_available == 0
+| extend window_end = range(bin(event_time, step) + step, bin(event_time, step) + window_size, step)
+| mv-expand window_end to typeof(datetime)
+| summarize empty_station_count = dcount(station_id) by window_end
+| order by window_end asc
+| render timechart
+
+
+// ---------- Q10. Next-hours forecast of the number of empty stations (native KQL time-series) ----------
+StationHourly
+| where hour > ago(7d)
+| summarize empty_stations = dcountif(station_id, empty_samples > 0) by hour
+| make-series empty_stations = max(empty_stations) default = 0 on hour from ago(7d) to now() + 6h step 1h
+| extend forecast = series_decompose_forecast(empty_stations, 6)
+| render timechart
+
+
+// ---------- Q11. Live vs batch: today's departures proxy vs the historical average for this hour ----------
+// Bikes leaving a station = decreases of bikes_available between two consecutive samples.
+StationStatus
+| where event_time > ago(3h)
+| order by station_id asc, event_time asc
+| extend drop = iff(prev(station_id) == station_id and prev(bikes_available) > bikes_available,
+                    prev(bikes_available) - bikes_available, 0)
+| summarize live_departures_proxy = sum(drop) by hour = bin(event_time, 1h)
+| extend local_hour = hourofday(datetime_utc_to_local(hour, "America/New_York"))
+// | join kind=leftouter (external_table('gold_hourly_pattern') | summarize hist = avg(avg_trips_per_hour) by hour)
+//     on $left.local_hour == $right.hour
+
+
+// =====================================================================================
+// ALERT RULES - each query is attached to an Activator (Reflex) trigger:
+//   Real-Time Dashboard tile / KQL queryset  ->  "Set alert"  ->  condition  ->  Teams / e-mail action
+// =====================================================================================
+
+// ---------- ALERT-1 (operational): a busy station is empty for more than 10 minutes ----------
+// Activator: run every 5 min, fire for each row (one alert per station), action = Teams message to dispatch.
+let busy = StationHourly | where hour > ago(7d) | summarize activity = sum(max_bikes - min_bikes) by station_id
+           | top 100 by activity;
+StationStatus
+| where event_time > ago(15m) and is_installed == 1
+| where station_id in ((busy | project station_id))
+| summarize first_empty = minif(event_time, bikes_available == 0),
+            last_sample = max(event_time),
+            max_bikes = max(bikes_available)
+          by station_id, station_name
+| where max_bikes == 0 and datetime_diff('minute', last_sample, first_empty) >= 10      // empty in every sample
+| project station_name, empty_since = datetime_utc_to_local(first_empty, "America/New_York")
+
+// ---------- ALERT-2 (network): more than 8 % of stations empty or full ----------
+LatestStationStatus
+| where is_installed == 1 and capacity > 0 and event_time > ago(15m)
+| summarize pct_bad = 100.0 * countif(bikes_available == 0 or docks_available == 0) / count()
+| where pct_bad > 8
+
+// ---------- ALERT-3 (data pipeline): the collector stopped sending events ----------
+// Activator condition: "no new event for 5 minutes" -> e-mail to the Data Engineer on duty.
+StationStatus
+| summarize last_event = max(event_time)
+| extend minutes_without_data = datetime_diff('minute', now(), last_event)
+| where minutes_without_data > 5

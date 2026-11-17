@@ -1,0 +1,331 @@
+{
+  "name": "pl_smartbike_batch",
+  "description": "Monthly batch ingestion: Citi Bike trip archive (HTTP zip) + Open-Meteo weather + GBFS station reference -> ADLS Gen2 landing (exposed in lh_smartbike as OneLake shortcut Files/bronze) -> Spark notebooks Bronze->Silver->Gold -> ML. Template in ADF/Fabric pipeline JSON format: connection ids must be replaced by the ones created in your workspace (see pipeline/README.md).",
+  "properties": {
+    "parameters": {
+      "month": {
+        "type": "string",
+        "defaultValue": "202610",
+        "metadata": "yyyyMM of the Citi Bike archive"
+      },
+      "weather_start": {
+        "type": "string",
+        "defaultValue": "2026-08-01"
+      },
+      "weather_end": {
+        "type": "string",
+        "defaultValue": "2026-10-31"
+      },
+      "retrain_model": {
+        "type": "bool",
+        "defaultValue": true
+      }
+    },
+    "activities": [
+      {
+        "name": "Copy_Trips_Zip_to_Landing",
+        "description": "Downloads <month>-citibike-tripdata.zip and unzips it on the fly (ZipDeflate) into the landing container.",
+        "type": "Copy",
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 120
+        },
+        "typeProperties": {
+          "source": {
+            "type": "BinarySource",
+            "storeSettings": {
+              "type": "HttpReadSettings",
+              "requestMethod": "GET"
+            },
+            "formatSettings": {
+              "type": "BinaryReadSettings",
+              "compressionProperties": {
+                "type": "ZipDeflateReadSettings",
+                "preserveZipFileNameAsFolder": false
+              }
+            }
+          },
+          "sink": {
+            "type": "BinarySink",
+            "storeSettings": {
+              "type": "AzureBlobFSWriteSettings"
+            }
+          }
+        },
+        "inputs": [
+          {
+            "type": "Binary",
+            "connection": "conn_http_citibike_tripdata",
+            "typeProperties": {
+              "location": {
+                "type": "HttpServerLocation",
+                "relativeUrl": {
+                  "value": "@concat(pipeline().parameters.month, '-citibike-tripdata.zip')",
+                  "type": "Expression"
+                }
+              },
+              "compression": {
+                "type": "ZipDeflate"
+              }
+            },
+            "comment": "connection base URL = https://s3.amazonaws.com/tripdata/ (anonymous)"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "Binary",
+            "connection": "conn_adls_stsmartbikedev",
+            "typeProperties": {
+              "location": {
+                "type": "AzureBlobFSLocation",
+                "fileSystem": "landing",
+                "folderPath": "citibike/trips"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "Copy_Weather_API_to_Landing",
+        "type": "Copy",
+        "policy": {
+          "timeout": "0.00:10:00",
+          "retry": 3,
+          "retryIntervalInSeconds": 60
+        },
+        "typeProperties": {
+          "source": {
+            "type": "JsonSource",
+            "storeSettings": {
+              "type": "HttpReadSettings",
+              "requestMethod": "GET"
+            }
+          },
+          "sink": {
+            "type": "JsonSink",
+            "storeSettings": {
+              "type": "AzureBlobFSWriteSettings"
+            }
+          }
+        },
+        "inputs": [
+          {
+            "type": "Json",
+            "connection": "conn_http_open_meteo_archive",
+            "typeProperties": {
+              "location": {
+                "type": "HttpServerLocation",
+                "relativeUrl": {
+                  "value": "@concat('v1/archive?latitude=40.7306&longitude=-73.9866&timezone=America%2FNew_York&hourly=temperature_2m,precipitation,rain,wind_speed_10m,relative_humidity_2m,weather_code&start_date=', pipeline().parameters.weather_start, '&end_date=', pipeline().parameters.weather_end)",
+                  "type": "Expression"
+                }
+              }
+            },
+            "comment": "connection base URL = https://archive-api.open-meteo.com/ (anonymous)"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "Json",
+            "connection": "conn_adls_stsmartbikedev",
+            "typeProperties": {
+              "location": {
+                "type": "AzureBlobFSLocation",
+                "fileSystem": "landing",
+                "folderPath": "weather",
+                "fileName": {
+                  "value": "@concat('weather_', pipeline().parameters.weather_start, '_', pipeline().parameters.weather_end, '.json')",
+                  "type": "Expression"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "Copy_GBFS_StationInfo_to_Landing",
+        "type": "Copy",
+        "policy": {
+          "timeout": "0.00:10:00",
+          "retry": 3,
+          "retryIntervalInSeconds": 60
+        },
+        "typeProperties": {
+          "source": {
+            "type": "JsonSource",
+            "storeSettings": {
+              "type": "HttpReadSettings",
+              "requestMethod": "GET"
+            }
+          },
+          "sink": {
+            "type": "JsonSink",
+            "storeSettings": {
+              "type": "AzureBlobFSWriteSettings"
+            }
+          }
+        },
+        "inputs": [
+          {
+            "type": "Json",
+            "connection": "conn_http_gbfs_citibike",
+            "typeProperties": {
+              "location": {
+                "type": "HttpServerLocation",
+                "relativeUrl": "gbfs/en/station_information.json"
+              }
+            },
+            "comment": "connection base URL = https://gbfs.citibikenyc.com/ (anonymous)"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "Json",
+            "connection": "conn_adls_stsmartbikedev",
+            "typeProperties": {
+              "location": {
+                "type": "AzureBlobFSLocation",
+                "fileSystem": "landing",
+                "folderPath": "gbfs",
+                "fileName": {
+                  "value": "@concat('station_information_', formatDateTime(utcNow(), 'yyyyMMddTHHmmssZ'), '.json')",
+                  "type": "Expression"
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "NB_01_Bronze_to_Silver",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "Copy_Trips_Zip_to_Landing",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "Copy_Weather_API_to_Landing",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "Copy_GBFS_StationInfo_to_Landing",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.01:00:00",
+          "retry": 1
+        },
+        "typeProperties": {
+          "notebookId": "<id of nb_01_bronze_to_silver>",
+          "workspaceId": "<ws-smartbike-dev id>"
+        }
+      },
+      {
+        "name": "NB_02_Silver_to_Gold",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "NB_01_Bronze_to_Silver",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.01:00:00",
+          "retry": 1
+        },
+        "typeProperties": {
+          "notebookId": "<id of nb_02_silver_to_gold>",
+          "workspaceId": "<ws-smartbike-dev id>"
+        }
+      },
+      {
+        "name": "NB_05_Advanced_Aggregations",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "NB_02_Silver_to_Gold",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.01:00:00",
+          "retry": 1
+        },
+        "typeProperties": {
+          "notebookId": "<id of nb_05_advanced_aggregations>",
+          "workspaceId": "<ws-smartbike-dev id>"
+        }
+      },
+      {
+        "name": "If_Retrain_Model",
+        "type": "IfCondition",
+        "dependsOn": [
+          {
+            "activity": "NB_02_Silver_to_Gold",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "expression": {
+            "value": "@pipeline().parameters.retrain_model",
+            "type": "Expression"
+          },
+          "ifTrueActivities": [
+            {
+              "name": "NB_03_ML_Demand_Forecast",
+              "type": "TridentNotebook",
+              "policy": {
+                "timeout": "0.01:00:00",
+                "retry": 0
+              },
+              "typeProperties": {
+                "notebookId": "<id of nb_03_ml_demand_forecast>",
+                "workspaceId": "<ws-smartbike-dev id>"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "Notify_On_Failure",
+        "description": "Failure path: Office 365 / Teams activity (or Activator) to alert the Data Engineer.",
+        "type": "Office365Outlook",
+        "dependsOn": [
+          {
+            "activity": "NB_02_Silver_to_Gold",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ],
+        "typeProperties": {
+          "to": "data-engineers@<your-domain>",
+          "subject": "@concat('[SmartBike] pipeline failed - run ', pipeline().RunId)",
+          "body": "The monthly batch pipeline failed. Check the Monitoring hub."
+        }
+      }
+    ]
+  },
+  "schedule": {
+    "comment": "Citi Bike publishes the previous month's archive in the first days of each month.",
+    "type": "Monthly",
+    "dayOfMonth": 8,
+    "time": "06:00",
+    "timeZone": "Romance Standard Time"
+  }
+}

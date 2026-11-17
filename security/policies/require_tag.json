@@ -1,0 +1,14 @@
+{
+  "properties": {
+    "displayName": "SmartBike - Require a tag on resources",
+    "description": "Cost tracking and cleanup: every resource must carry the 'project' tag (used by cleanup.ps1 and cost analysis).",
+    "mode": "Indexed",
+    "parameters": {
+      "tagName": { "type": "String", "metadata": { "displayName": "Tag name" } }
+    },
+    "policyRule": {
+      "if": { "field": "[concat('tags[', parameters('tagName'), ']')]", "exists": "false" },
+      "then": { "effect": "deny" }
+    }
+  }
+}

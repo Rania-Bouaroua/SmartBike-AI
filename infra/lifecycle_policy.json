@@ -1,0 +1,18 @@
+{
+  "rules": [
+    {
+      "enabled": true,
+      "name": "landing-raw-retention",
+      "type": "Lifecycle",
+      "definition": {
+        "filters": { "blobTypes": ["blockBlob"], "prefixMatch": ["landing/citibike/", "landing/weather/", "landing/gbfs/"] },
+        "actions": {
+          "baseBlob": {
+            "tierToCool": { "daysAfterModificationGreaterThan": 30 },
+            "delete": { "daysAfterModificationGreaterThan": 365 }
+          }
+        }
+      }
+    }
+  ]
+}

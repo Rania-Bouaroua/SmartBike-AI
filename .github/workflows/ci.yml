@@ -1,0 +1,37 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff pytest requests pandas pyarrow fastapi httpx
+      - name: Lint (scripts, notebooks, tests)
+        run: ruff check scripts notebooks tests docs app
+      - name: Unit tests
+        run: pytest -q tests
+      - name: Validate JSON (pipeline, policies)
+        run: |
+          for f in pipeline/*.json security/policies/*.json infra/*.json powerbi/*.json; do python -m json.tool "$f" > /dev/null && echo "ok $f"; done
+      - name: No secrets committed
+        run: |
+          ! grep -rInE "(Endpoint=sb://|SharedAccessKey=|AccountKey=)" --exclude-dir=.git .
+
+  notebooks-in-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fabric .ipynb are regenerated from the .py sources
+        run: |
+          python scripts/py_to_ipynb.py
+          git diff --exit-code notebooks/fabric || (echo "run scripts/py_to_ipynb.py and commit" && exit 1)

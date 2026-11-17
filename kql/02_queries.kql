@@ -1,0 +1,100 @@
+// =====================================================================================
+// SmartBike AI - real-time analysis queries (Eventhouse kqldb_smartbike)
+// Q1 and Q2 satisfy the minimum requirement (2 queries incl. one time-window aggregation).
+// Each query is a tile candidate for the Real-Time Dashboard "rtd_smartbike_live".
+// =====================================================================================
+
+
+// ---------- Q1. Which stations are empty, almost empty or almost full RIGHT NOW? ----------
+// Answers dashboard question #1. Uses the materialized view (latest state per station).
+LatestStationStatus
+| where is_installed == 1 and capacity > 0
+| where event_time > ago(30m)                                   // ignore stations that stopped reporting
+| extend threshold = max_of(2, toint(capacity * 0.10))
+| extend state = case(
+      bikes_available == 0,              "1 - VIDE",
+      bikes_available <= threshold,      "2 - presque vide",
+      docks_available == 0,              "3 - SATUREE",
+      docks_available <= threshold,      "4 - presque saturee",
+                                         "5 - ok")
+| summarize stations = count() by state
+| order by state asc
+
+
+// ---------- Q1b. Detail list for operators (top stations to visit) ----------
+LatestStationStatus
+| where is_installed == 1 and capacity > 0 and event_time > ago(30m)
+| extend threshold = max_of(2, toint(capacity * 0.10))
+| where bikes_available <= threshold or docks_available <= threshold
+| project station_name, short_name, bikes_available, docks_available, capacity,
+          fill_ratio, local_time = datetime_utc_to_local(event_time, "America/New_York"), lat, lon
+| order by fill_ratio asc
+
+
+// ---------- Q2. TIME-WINDOW aggregation: network health per 15-minute window ----------
+// For each 15-min window and each station keep the latest state (full snapshots guarantee every station
+// appears in every window), then count empty / full stations and total bikes available.
+StationStatus
+| where event_time > ago(6h) and is_installed == 1 and capacity > 0
+| summarize arg_max(event_time, bikes_available, docks_available) by station_id, window = bin(event_time, 15m)
+| summarize empty_stations = countif(bikes_available == 0),
+            full_stations  = countif(docks_available == 0),
+            bikes_in_docks = sum(bikes_available),
+            reporting_stations = dcount(station_id)
+          by window
+| extend window_local = datetime_utc_to_local(window, "America/New_York")
+| order by window asc
+| render timechart with (xcolumn = window_local, ycolumns = empty_stations, full_stations)
+
+
+// ---------- Q3. Stations losing bikes fastest in the last 30 minutes (rebalancing early warning) ----------
+// Estimates "minutes until empty" from the observed depletion rate.
+StationStatus
+| where event_time > ago(30m) and is_installed == 1
+| summarize (first_time, first_bikes) = arg_min(event_time, bikes_available),
+            (last_time, last_bikes, station_name, capacity) = arg_max(event_time, bikes_available, station_name, capacity)
+          by station_id
+| extend minutes = datetime_diff('minute', last_time, first_time),
+         delta = last_bikes - first_bikes
+| where minutes >= 10 and delta < 0
+| extend bikes_lost_per_min = -todouble(delta) / minutes
+| extend minutes_to_empty = round(last_bikes / bikes_lost_per_min, 0)
+| project station_name, capacity, first_bikes, last_bikes, delta, bikes_lost_per_min, minutes_to_empty
+| order by minutes_to_empty asc
+| take 20
+
+
+// ---------- Q4. Activity per 5-minute window + automatic anomaly detection ----------
+// Number of availability changes (delta events) is a proxy of system activity; spikes/drops are flagged.
+StationStatus
+| where event_time > ago(1d) and poll_type == "delta"
+| make-series changes = count() default = 0 on event_time from ago(1d) to now() step 5m
+| extend (anomaly, score, baseline) = series_decompose_anomalies(changes, 2.5)
+| render anomalychart with (anomalycolumns = anomaly)
+
+
+// ---------- Q5. Rolling average of the network fill ratio (sliding 1-hour window, step 15 min) ----------
+StationStatus
+| where event_time > ago(12h) and is_installed == 1 and capacity > 0
+| summarize arg_max(event_time, fill_ratio) by station_id, window = bin(event_time, 15m)   // latest state per window
+| summarize avg_fill = avg(fill_ratio) by window
+| order by window asc                                                                          // serializes rows for prev()
+| extend rolling_1h = (avg_fill + prev(avg_fill, 1) + prev(avg_fill, 2) + prev(avg_fill, 3)) / 4.0
+| render timechart
+
+
+// ---------- Q6. Data quality: stations that stopped reporting or are out of service ----------
+LatestStationStatus
+| extend minutes_since_report = datetime_diff('minute', now(), last_reported)
+| summarize total = count(),
+            not_installed = countif(is_installed == 0),
+            not_renting = countif(is_installed == 1 and is_renting == 0),
+            stale_over_60min = countif(is_installed == 1 and minutes_since_report > 60)
+
+
+// ---------- Q7. Bridge with batch analytics: live state of the historically most used stations ----------
+// The Lakehouse table gold_station_profile can be exposed here through a OneLake shortcut
+// (external table / shortcut named gold_station_profile) to compare live state with history.
+// LatestStationStatus
+// | join kind=inner (external_table('gold_station_profile') | top 50 by departures) on $left.short_name == $right.station_id
+// | project station_name, bikes_available, capacity, avg_daily_departures, station_role
