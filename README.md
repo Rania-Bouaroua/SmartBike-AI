@@ -1,4 +1,6 @@
-# SmartBike AI 🚲
+<p align="center"><img src="assets/logo_full.png" alt="SmartBike AI" width="560"/></p>
+
+# SmartBike AI
 
 **Anticiper le manque de vélos et de places dans les stations de vélos partagés** — projet du cours
 *Design of Cloud Data-Driven Applications* (CDDA 2026-2027, Pr. Ibrahim RAHHAL).

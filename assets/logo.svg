@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#06B6D4"/>
+      <stop offset="0.55" stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#9333EA"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.2" r="0.9">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="spark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FDE68A"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+  <!-- app-icon tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#glow)"/>
+  <!-- data-pulse road -->
+  <path d="M64 446 H196 L218 424 L240 466 L262 414 L282 456 L298 446 H448" fill="none" stroke="#FDE68A"
+        stroke-width="12" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.95"/>
+  <!-- rear wheel = station fill gauge -->
+  <circle cx="160" cy="318" r="78" fill="none" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="22"/>
+  <path d="M160 240 A78 78 0 1 1 82 318" fill="none" stroke="#FFFFFF" stroke-width="22"/>
+  <circle cx="160" cy="318" r="10" fill="#FFFFFF"/>
+  <!-- front wheel = forecast pulse -->
+  <circle cx="352" cy="318" r="78" fill="none" stroke="#FFFFFF" stroke-width="22"/>
+  <path d="M352 240 A78 78 0 0 1 425 291" fill="none" stroke="#FDE68A" stroke-width="22"/>
+  <!-- frame -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M160 318 L250 318 L208 200 Z"/>
+    <path d="M208 200 L322 200 L250 318"/>
+    <path d="M352 318 L312 172 L292 172"/>
+    <path d="M312 172 L346 166"/>
+    <path d="M186 186 H236"/>
+  </g>
+  <circle cx="250" cy="318" r="14" fill="#FFFFFF"/>
+  <!-- AI spark -->
+  <path d="M400 70 C405 104 416 115 450 120 C416 125 405 136 400 170 C395 136 384 125 350 120 C384 115 395 104 400 70 Z"
+        fill="url(#spark)"/>
+  <circle cx="452" cy="72" r="9" fill="#FDE68A"/>
+</svg>

@@ -212,7 +212,11 @@ def page_break() -> None:
 
 
 # ------------------------------------------------------------------ cover
-for _ in range(5):
+for _ in range(2):
+    doc.add_paragraph()
+LOGO = ROOT / "assets" / "logo_full.png"
+if LOGO.exists():
+    doc.add_picture(str(LOGO), width=Cm(11))
     doc.add_paragraph()
 p = doc.add_paragraph("DESIGN OF CLOUD DATA-DRIVEN APPLICATIONS · 2026/2027 · Pr. Ibrahim RAHHAL")
 p.runs[0].font.size, p.runs[0].font.color.rgb, p.runs[0].bold = Pt(10), BLUE, True
