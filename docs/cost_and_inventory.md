@@ -9,10 +9,10 @@
 
 | Ressource | Nom | Service / SKU | Région | Rôle | État après démo |
 |---|---|---|---|---|---|
-| Groupe de ressources | `rg-smartbike-dev` | — | France Central | conteneur, tags | supprimé |
-| Stockage ADLS Gen2 | `stsmartbikedev<sfx>` | StorageV2 Standard LRS, HNS | France Central | zone d'atterrissage (Bronze) | supprimé |
-| Key Vault | `kv-smartbike-dev-<sfx>` | Standard, RBAC | France Central | secret Eventstream | supprimé (purge J+7) |
-| Log Analytics | `log-smartbike-dev` | PerGB2018, rétention 30 j | France Central | audit | supprimé |
+| Groupe de ressources | `rg-smartbike-dev` | — | Germany West Central | conteneur, tags | supprimé |
+| Stockage ADLS Gen2 | `stsmartbikedev<sfx>` | StorageV2 Standard LRS, HNS | Germany West Central | zone d'atterrissage (Bronze) | supprimé |
+| Key Vault | `kv-smartbike-dev-<sfx>` | Standard, RBAC | Germany West Central | secret Eventstream | supprimé (purge J+7) |
+| Log Analytics | `log-smartbike-dev` | PerGB2018, rétention 30 j | Germany West Central | audit | supprimé |
 | Budget | `budget-smartbike-dev` | Cost Management | — | alerte 80 % de 20 € | supprimé |
 | Azure Policy ×3 | `smartbike-*` | définitions personnalisées | abonnement / RG | gouvernance | supprimées |
 | Capacité Fabric | essai (Trial) | ≈ F64 | région du tenant | calcul Fabric | expirée / en pause |

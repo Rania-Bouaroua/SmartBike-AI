@@ -43,7 +43,7 @@ Purview : enregistrer le compte ADLS + l'espace Fabric comme sources, lancer un 
 
 | Politique ([`security/policies`](policies)) | Effet | Pourquoi |
 |---|---|---|
-| `allowed_locations.json` | **deny** hors `francecentral`, `westeurope` | résidence des données dans l'UE |
+| `allowed_locations.json` | **deny** hors `germanywestcentral` (+ `global`) | résidence des données dans l'UE ; sous-ensemble des 5 régions autorisées par la politique de l'université |
 | `require_tag.json` | **deny** si le tag `project` est absent | suivi des coûts + nettoyage par tag |
 | `deny_storage_public_access.json` | **deny** stockage public / clés partagées / TLS < 1.2 | aucune exposition anonyme |
 
