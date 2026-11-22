@@ -91,6 +91,6 @@ Write-Host "   (configure the 80 % e-mail notification to $BudgetEmail in Cost M
 
 Write-Host "`nDone. Next steps:" -ForegroundColor Green
 Write-Host " 1. Create the Eventstream custom endpoint in Fabric, then store its connection string:"
-Write-Host "    az keyvault secret set --vault-name $kv -n eventstream-conn --value '<Endpoint=sb://...>'"
+Write-Host "    az keyvault secret set --vault-name $kv -n eventstream-conn --value '<eventstream-connection-string>'"
 Write-Host " 2. In the Lakehouse lh_smartbike: New shortcut > ADLS Gen2 > https://$st.dfs.core.windows.net/landing  -> name it 'bronze' under Files/"
 Write-Host " 3. Run the collector: python scripts/gbfs_collector.py --keyvault $kv --only-changes"

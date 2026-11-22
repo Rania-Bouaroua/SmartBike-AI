@@ -30,7 +30,7 @@ jobs:
           for f in pipeline/*.json security/policies/*.json infra/*.json powerbi/*.json; do python -m json.tool "$f" > /dev/null && echo "ok $f"; done
       - name: No secrets committed
         run: |
-          ! grep -rInE "(Endpoint=sb://|SharedAccessKey=|AccountKey=)" --exclude-dir=.git .
+          ! grep -rInE "(Endpoint=sb://|SharedAccessKey=|AccountKey=)" --exclude-dir=.git --exclude-dir=.github .
 
   notebooks-in-sync:
     runs-on: ubuntu-latest
