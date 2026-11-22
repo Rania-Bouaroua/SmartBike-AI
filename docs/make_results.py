@@ -43,6 +43,57 @@ def fmt(n):
     return f"{n:,.0f}".replace(",", " ")
 
 
+MODEL_LABELS = {"baseline": "Baseline (moyenne historique)", "ridge": "Ridge (linéaire)", "poisson_glm": "GLM de Poisson",
+                "mlp": "Réseau de neurones (MLP)", "random_forest": "Random Forest", "extra_trees": "Extra Trees",
+                "hgb_squared": "Gradient boosting (perte L2)", "hgb_poisson": "Gradient boosting (perte Poisson)",
+                "HistGradientBoostingRegressor": "Gradient boosting (perte Poisson)", "ExtraTreesRegressor": "Extra Trees"}
+
+
+def model_selection_lines() -> list[str]:
+    """Section 5.1: the comparison of algorithms on the validation week (+ figure 11)."""
+    if not (T / "gold_model_comparison").exists():
+        return []
+    c = t("gold_model_comparison")
+    c["label"] = c.model.map(MODEL_LABELS).fillna(c.model)
+    n = int((c.model != "baseline").sum() / c.target.nunique())
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
+    order = c[c.target == "departures"].sort_values("val_dev_gain_vs_baseline_pct").label.tolist()
+    for ax, (target, title) in zip(axes, [("departures", "Départs"), ("arrivals", "Arrivées")]):
+        d = c[c.target == target].set_index("label").loc[order]
+        colors = [BLUE if s else (ORANGE if m == "baseline" else SEQ[2]) for s, m in zip(d.selected, d.model)]
+        ax.barh(d.index, d.val_dev_gain_vs_baseline_pct, color=colors)
+        ax.axvline(0, color=INK2, linewidth=0.8)
+        lo = min(0, d.val_dev_gain_vs_baseline_pct.min())
+        ax.set_xlim(lo * 1.3 - 1, max(0, d.val_dev_gain_vs_baseline_pct.max()) + 4)  # room for the labels
+        for y, v in enumerate(d.val_dev_gain_vs_baseline_pct):
+            ax.annotate(f"{v:+.1f} %", (v, y), xytext=(4 if v >= 0 else -4, 0), textcoords="offset points",
+                        ha="left" if v >= 0 else "right", va="center", fontsize=8, color=INK2)
+        ax.set_title(title)
+        ax.set_xlabel("gain de déviance de Poisson vs baseline (%)")
+    fig.suptitle(f"Sélection du modèle : {n} algorithmes, semaine de validation (bleu = retenu)", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(FIG / "fig11_model_comparison.png", dpi=160)
+    plt.close(fig)
+    out = ["### 5.1 Sélection du modèle : " + str(n) + " algorithmes comparés",
+           "",
+           "Protocole : la dernière semaine de la période d'entraînement sert de **validation** (encodages recalculés "
+           "sur les semaines précédentes). Chaque algorithme est entraîné sur le même échantillon d'1 million de lignes "
+           "et jugé sur toute la semaine de validation ; la semaine de **test** ne sert qu'une fois, au modèle retenu. "
+           "Critère : **déviance de Poisson** (qualité du *taux* prévu, ce que consomme la simulation du risque) ; "
+           "parmi les modèles à moins de 1 % du meilleur, le plus léger.",
+           ""]
+    for target, title in [("departures", "Départs"), ("arrivals", "Arrivées")]:
+        d = c[c.target == target].sort_values("val_poisson_dev")
+        out += [f"**{title}**", "",
+                "| Rang | Modèle | Famille | Déviance | MAE | RMSE | Entraînement | Taille |",
+                "|---:|---|---|---:|---:|---:|---:|---:|",
+                *[f"| {r.rank} | {'**' + r.label + '** ✓' if r.selected else r.label} | {r.family} | "
+                  f"{r.val_poisson_dev:.4f} | {r.val_mae:.4f} | {r.val_rmse:.3f} | {r.fit_seconds:.0f} s | "
+                  f"{r.size_mb:.0f} Mo |" for r in d.itertuples()], ""]
+    out += ["![](figures/fig11_model_comparison.png)", ""]
+    return out
+
+
 daily = t("gold_daily_kpis").sort_values("date")
 daily["date"] = pd.to_datetime(daily["date"])
 profile = t("gold_station_profile")
@@ -259,6 +310,7 @@ lines = [
     "",
     "![](figures/fig5_ml_network_test_week.png)",
     "",
+    *model_selection_lines(),
     "## 6. Priorités d'intervention (notebook 04, état live GBFS)",
     "",
     f"Snapshot : **{snap:%d/%m/%Y %H:%M}** (heure de New York), horizon {int(priority.horizon_hours.iloc[0])} h.",
@@ -303,10 +355,18 @@ lines = [
     *([] if promo is None else [
         "## 8. MLOps : promotion du modèle",
         "",
-        "| Modèle | Version candidate | MAE candidate | Champion avant | MAE champion | Baseline | Promu |",
-        "|---|---:|---:|---:|---:|---:|---|",
-        *[f"| {r.model} | {r.challenger_version} | {r.challenger_mae:.4f} | {r.champion_version_before} | "
-          f"{r.champion_mae_before} | {r.baseline_mae:.4f} | {'oui' if r.promoted else 'non'} |" for r in promo.itertuples()],
+        "Le candidat et le champion en place sont ré-évalués sur la **même** semaine de test, avec le critère de la "
+        "sélection (déviance de Poisson) ; le candidat doit aussi battre la baseline (déviance et MAE).",
+        "",
+        "| Modèle | Candidat | Déviance candidat | Champion avant | Déviance champion | Déviance baseline | "
+        "MAE candidat / champion | Promu |",
+        "|---|---|---:|---|---:|---:|---:|---|",
+        *[f"| {r.model} | v{r.challenger_version} {MODEL_LABELS.get(r.algorithm, r.algorithm)} | "
+          f"{r.challenger_poisson_dev:.4f} | v{r.champion_version_before:.0f} "
+          f"{MODEL_LABELS.get(r.champion_algorithm_before, r.champion_algorithm_before)} | "
+          f"{r.champion_poisson_dev_before:.4f} | {r.baseline_poisson_dev:.4f} | "
+          f"{r.challenger_mae:.4f} / {r.champion_mae_before:.4f} | {'**oui**' if r.promoted else 'non'} |"
+          for r in promo.itertuples()],
         ""]),
 ]
 

@@ -20,9 +20,13 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / "models" / "serving"
 MODEL_NAME = "smartbike_demand_model"
-# skops (safe serialisation) refuses unknown types; HistGradientBoosting needs exactly this one. We trained the
-# model ourselves, so it is trusted - and nothing else is.
-TRUSTED_TYPES = ["sklearn.ensemble._hist_gradient_boosting.predictor.TreePredictor"]
+
+
+def trusted_types(model) -> list[str]:
+    """skops (safe serialisation) refuses types it does not know. We trust exactly the types of the champion we
+    trained ourselves (e.g. TreePredictor for gradient boosting, Tree for forests) - and nothing else."""
+    import skops.io
+    return skops.io.get_untrusted_types(data=skops.io.dumps(model))
 
 
 def main() -> int:
@@ -38,11 +42,13 @@ def main() -> int:
         name = f"{MODEL_NAME}_{target}"
         mv = client.get_model_version_by_alias(name, "champion")
         model = mlflow.sklearn.load_model(f"models:/{name}@champion")
-        mlflow.sklearn.save_model(model, OUT / target, serialization_format="skops", skops_trusted_types=TRUSTED_TYPES)
+        mlflow.sklearn.save_model(model, OUT / target, serialization_format="skops", skops_trusted_types=trusted_types(model))
         run = client.get_run(mv.run_id) if mv.run_id else None
         manifest["models"][target] = {
-            "registered_model": name, "version": int(mv.version), "alias": "champion", "run_id": mv.run_id,
-            "metrics": {k: round(v, 4) for k, v in (run.data.metrics.items() if run else []) if "mae" in k or "rmse" in k},
+            "registered_model": name, "algorithm": type(model).__name__, "version": int(mv.version),
+            "alias": "champion", "run_id": mv.run_id,
+            "metrics": {k: round(v, 4) for k, v in (run.data.metrics.items() if run else [])
+                        if any(s in k for s in ("mae", "rmse", "dev"))},
             "features": list(model.feature_names_in_)}
         print(f"exported {name} v{mv.version} -> {OUT / target}")
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

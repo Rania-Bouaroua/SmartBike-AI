@@ -383,7 +383,9 @@ for a, b in [("## 5.", "## 6."), ("## 6.", "## 7."), ("## 8.", "## 99.")]:
         render_md(tmp, shift=2)
 doc.add_heading("Extensions (bonus)", level=2)
 add_table([["Extension", "Réalisation", "Preuve"],
-           ["MLOps", "registre MLflow, alias challenger → champion seulement si la MAE bat le champion et la baseline, "
+           ["Sélection de modèle", "7 algorithmes (linéaires, réseau de neurones, forêts, gradient boosting) comparés sur "
+                                 "une semaine de validation, test utilisé une seule fois", "notebook 03 §3, résultats §5.1"],
+           ["MLOps", "registre MLflow, alias challenger → champion seulement s'il bat le champion et la baseline, "
                      "tags de validation, journal gold_model_promotion_log", "notebook 03 §5, onglet Modèle de l'app"],
            ["CI/CD", "GitHub Actions : lint (ruff), tests (pytest), validation JSON, détection de secrets, "
                      "notebooks Fabric synchronisés", ".github/workflows/ci.yml"],

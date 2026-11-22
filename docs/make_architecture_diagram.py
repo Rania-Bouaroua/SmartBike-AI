@@ -84,7 +84,7 @@ kq = box(96, 21, 13, 15, "KQL", "stations vides\nfenêtres 15 min\nanomalies")
 
 # --- ML
 ml = box(116, 61, 22, 13, "Notebook 03 · MLflow",
-         "HistGradientBoosting\nPoisson · départs/arrivées\nMAE/RMSE vs baseline\nchampion / challenger")
+         "7 algorithmes comparés\nExtra Trees · départs/arrivées\ndéviance Poisson vs baseline\nchampion / challenger")
 pr = box(116, 47.5, 22, 11, "Notebook 04 · priorités",
          "état live + prévision météo\n→ risque vide/saturée\n→ vélos à déplacer\n→ API FastAPI + app Streamlit")
 

@@ -49,3 +49,14 @@ def test_truck_routes_contract():
 
 def test_every_contract_is_a_schema():
     assert {"silver_stations", "gold_station_priority", "gold_truck_routes"} <= set(CONTRACTS)
+
+
+def test_model_comparison_contract():
+    ok = pd.DataFrame({"target": ["departures"] * 3, "model": ["baseline", "ridge", "hgb_poisson"],
+                       "val_poisson_dev": [1.3, 1.5, 1.2], "val_mae": [1.2, 1.2, 1.19],
+                       "selected": [False, False, True]})
+    validate("gold_model_comparison", ok)
+    with pytest.raises(DataContractError, match="exactly one selected"):
+        validate("gold_model_comparison", ok.assign(selected=[False, True, True]))
+    with pytest.raises(DataContractError, match="baseline is not a model"):
+        validate("gold_model_comparison", ok.assign(selected=[True, False, False]))

@@ -313,7 +313,7 @@ def sidebar_operator_panel(prio: pd.DataFrame | None) -> None:
 - **Fabric** · Lakehouse Delta (Bronze → Silver → Gold)
 - **Spark** · 5 notebooks · agrégations avancées
 - **Temps réel** · Eventstream → KQL → Activator
-- **ML** · HistGradientBoosting + MLflow
+- **ML** · 7 algorithmes comparés (Extra Trees retenu) + MLflow
 """)
     with st.expander("Outils"):
         st.markdown("- API REST : [localhost:8000/docs](http://localhost:8000/docs)\n"
@@ -764,6 +764,43 @@ with tabs[7]:
                      color_discrete_map={"Baseline": BAR_SOFT, "Modèle": INDIGO}, labels={"cible": "", "type": ""})
         fig.update_yaxes(range=[comp.MAE.min() * .9, comp.MAE.max() * 1.04])
         show(fig, 380)
+    if has("gold_model_comparison"):
+        cmp_ = t("gold_model_comparison")
+        n_models = int((cmp_.model != "baseline").sum() / cmp_.target.nunique())
+        section(f"Sélection du modèle : {n_models} algorithmes comparés",
+                "Chaque algorithme est entraîné sur le même échantillon et jugé sur une semaine de validation ; "
+                "la semaine de test ne sert qu'une fois, au modèle retenu. Critère : déviance de Poisson (qualité du "
+                "taux prévu, ce que consomme la simulation du risque). Plus haut = meilleur.")
+        labels = {"baseline": "Baseline (moyenne historique)", "ridge": "Ridge (linéaire)",
+                  "poisson_glm": "GLM de Poisson", "mlp": "Réseau de neurones", "random_forest": "Random Forest",
+                  "extra_trees": "Extra Trees", "hgb_squared": "Gradient boosting (L2)",
+                  "hgb_poisson": "Gradient boosting (Poisson)"}
+        cmp_ = cmp_.assign(algo=cmp_.model.map(labels).fillna(cmp_.model),
+                           cible=cmp_.target.map({"departures": "Départs", "arrivals": "Arrivées"}),
+                           statut=np.where(cmp_.selected, "Retenu", np.where(cmp_.model == "baseline", "Référence",
+                                                                             "Candidat")))
+        order = (cmp_[cmp_.target == "departures"].sort_values("val_dev_gain_vs_baseline_pct").algo.tolist())
+        fig = px.bar(cmp_, y="algo", x="val_dev_gain_vs_baseline_pct", color="statut", facet_col="cible",
+                     orientation="h", text_auto=".1f", category_orders={"algo": order},
+                     color_discrete_map={"Retenu": INDIGO, "Candidat": BAR_SOFT, "Référence": GOLD},
+                     labels={"algo": "", "val_dev_gain_vs_baseline_pct": "gain de déviance vs baseline (%)",
+                             "statut": ""})
+        fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+        show(fig, 380)
+        tbl = (cmp_[["cible", "algo", "family", "val_poisson_dev", "val_mae", "val_rmse", "fit_seconds", "size_mb",
+                     "selected"]]
+               .sort_values(["cible", "val_poisson_dev"], ascending=[False, True]))
+        st.dataframe(tbl, hide_index=True, width="stretch",
+                     column_config={"cible": "Cible", "algo": "Modèle", "family": "Famille",
+                                    "val_poisson_dev": st.column_config.NumberColumn("Déviance", format="%.4f"),
+                                    "val_mae": st.column_config.NumberColumn("MAE", format="%.4f"),
+                                    "val_rmse": st.column_config.NumberColumn("RMSE", format="%.3f"),
+                                    "fit_seconds": st.column_config.NumberColumn("Entraînement (s)", format="%.0f"),
+                                    "size_mb": st.column_config.NumberColumn("Taille (Mo)", format="%.1f"),
+                                    "selected": st.column_config.CheckboxColumn("Retenu")})
+    labels_short = {"ridge": "Ridge", "poisson_glm": "GLM Poisson", "mlp": "MLP", "random_forest": "Random Forest",
+                    "extra_trees": "Extra Trees", "hgb_squared": "GB L2", "hgb_poisson": "GB Poisson",
+                    "HistGradientBoostingRegressor": "GB Poisson", "ExtraTreesRegressor": "Extra Trees"}
     if has("gold_model_promotion_log"):
         section("MLOps : champion / challenger",
                 "Un nouveau modèle n'est mis en production que s'il bat le champion actuel ET la baseline.")
@@ -773,10 +810,21 @@ with tabs[7]:
             name = "Départs" if "departures" in r.model else "Arrivées"
             badge = (f'<span class="badge" style="background:{EMERALD}">PROMU ✓</span>' if ok
                      else f'<span class="badge" style="background:{ROSE}">REJETÉ ✗</span>')
+            if "challenger_poisson_dev" in r and pd.notna(r.get("champion_poisson_dev_before")):
+                algo = labels_short.get(r.get("algorithm"), r.get("algorithm"))
+                before = labels_short.get(r.get("champion_algorithm_before"), r.get("champion_algorithm_before"))
+                line = (f"Déviance challenger ({algo}) <b>{r.challenger_poisson_dev:.4f}</b> · champion "
+                        f"v{int(r.champion_version_before)} ({before}) <b>{r.champion_poisson_dev_before:.4f}</b> · "
+                        f"baseline {r.baseline_poisson_dev:.4f}<br/>MAE {r.challenger_mae:.4f} vs "
+                        f"{r.champion_mae_before:.4f} · baseline {r.baseline_mae:.4f}")
+            elif pd.notna(r.get("champion_version_before")):
+                line = (f"MAE challenger <b>{r.challenger_mae:.4f}</b> · champion v{int(r.champion_version_before)} "
+                        f"<b>{r.champion_mae_before:.4f}</b> · baseline {r.baseline_mae:.4f}")
+            else:
+                line = f"Premier modèle · MAE <b>{r.challenger_mae:.4f}</b> · baseline {r.baseline_mae:.4f}"
             col.markdown(f"""<div class="card" style="--c:{EMERALD if ok else ROSE}">
               <div class="t">{name} · challenger v{int(r.challenger_version)} {badge}</div>
-              <div class="m">MAE challenger <b>{r.challenger_mae:.4f}</b> · champion v{int(r.champion_version_before)}
-              <b>{r.champion_mae_before:.4f}</b> · baseline {r.baseline_mae:.4f}<br/>
+              <div class="m">{line}<br/>
               {'Le challenger devient le nouveau champion.' if ok else 'Le champion actuel reste en production.'}
               </div></div>""", unsafe_allow_html=True)
 

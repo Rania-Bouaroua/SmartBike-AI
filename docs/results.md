@@ -56,39 +56,71 @@ Découpage chronologique : les 7 derniers jours servent de test. Baseline = moye
 
 | Cible | MAE baseline | MAE modèle | RMSE baseline | RMSE modèle | Erreur réseau/heure (WAPE) baseline → modèle |
 |---|---:|---:|---:|---:|---:|
-| arrivals | 1.376 | 1.312 | 2.853 | 2.779 | 10.3 % → **7.6 %** |
-| departures | 1.339 | 1.296 | 2.801 | 2.743 | 10.3 % → **7.3 %** |
+| arrivals | 1.376 | 1.338 | 2.853 | 2.795 | 10.3 % → **8.0 %** |
+| departures | 1.339 | 1.315 | 2.801 | 2.773 | 10.3 % → **8.1 %** |
 
-Lecture : au niveau d'une station et d'une heure (≈ 1-2 trajets en moyenne), l'aléa domine et le modèle ne gagne que 3.2 % de MAE. Sommé sur le réseau, où la météo et la tendance saisonnière jouent pleinement, l'erreur horaire baisse nettement.
+Lecture : au niveau d'une station et d'une heure (≈ 1-2 trajets en moyenne), l'aléa domine et le modèle ne gagne que 1.8 % de MAE. Sommé sur le réseau, où la météo et la tendance saisonnière jouent pleinement, l'erreur horaire baisse nettement.
 
 ![](figures/fig5_ml_network_test_week.png)
 
+### 5.1 Sélection du modèle : 7 algorithmes comparés
+
+Protocole : la dernière semaine de la période d'entraînement sert de **validation** (encodages recalculés sur les semaines précédentes). Chaque algorithme est entraîné sur le même échantillon d'1 million de lignes et jugé sur toute la semaine de validation ; la semaine de **test** ne sert qu'une fois, au modèle retenu. Critère : **déviance de Poisson** (qualité du *taux* prévu, ce que consomme la simulation du risque) ; parmi les modèles à moins de 1 % du meilleur, le plus léger.
+
+**Départs**
+
+| Rang | Modèle | Famille | Déviance | MAE | RMSE | Entraînement | Taille |
+|---:|---|---|---:|---:|---:|---:|---:|
+| 1 | **Extra Trees** ✓ | arbres extrêmement aléatoires | 1.2294 | 1.2006 | 2.332 | 38 s | 27 Mo |
+| 2 | Random Forest | forêt aléatoire (bagging) | 1.2430 | 1.1878 | 2.307 | 71 s | 32 Mo |
+| 3 | Baseline (moyenne historique) | moyenne historique station × heure | 1.2865 | 1.2207 | 2.344 | 0 s | 0 Mo |
+| 4 | Gradient boosting (perte L2) | gradient boosting, perte quadratique | 1.3050 | 1.1881 | 2.339 | 20 s | 3 Mo |
+| 5 | Gradient boosting (perte Poisson) | gradient boosting, perte de Poisson | 1.3536 | 1.1917 | 2.369 | 28 s | 3 Mo |
+| 6 | GLM de Poisson | linéaire généralisé, lien log | 1.3773 | 1.3016 | 2.542 | 17 s | 0 Mo |
+| 7 | Ridge (linéaire) | linéaire (moindres carrés L2) | 1.5667 | 1.2100 | 2.340 | 4 s | 0 Mo |
+| 8 | Réseau de neurones (MLP) | réseau de neurones 64-32 | 1.9702 | 1.2260 | 2.361 | 276 s | 0 Mo |
+
+**Arrivées**
+
+| Rang | Modèle | Famille | Déviance | MAE | RMSE | Entraînement | Taille |
+|---:|---|---|---:|---:|---:|---:|---:|
+| 1 | **Extra Trees** ✓ | arbres extrêmement aléatoires | 1.2797 | 1.2248 | 2.337 | 36 s | 28 Mo |
+| 2 | Random Forest | forêt aléatoire (bagging) | 1.2887 | 1.2093 | 2.316 | 89 s | 33 Mo |
+| 3 | Baseline (moyenne historique) | moyenne historique station × heure | 1.3528 | 1.2559 | 2.385 | 0 s | 0 Mo |
+| 4 | Gradient boosting (perte L2) | gradient boosting, perte quadratique | 1.3618 | 1.2054 | 2.356 | 21 s | 3 Mo |
+| 5 | Gradient boosting (perte Poisson) | gradient boosting, perte de Poisson | 1.3881 | 1.2058 | 2.401 | 31 s | 3 Mo |
+| 6 | GLM de Poisson | linéaire généralisé, lien log | 1.4381 | 1.3345 | 2.546 | 14 s | 0 Mo |
+| 7 | Ridge (linéaire) | linéaire (moindres carrés L2) | 1.6257 | 1.2418 | 2.382 | 3 s | 0 Mo |
+| 8 | Réseau de neurones (MLP) | réseau de neurones 64-32 | 2.0619 | 1.2727 | 2.416 | 152 s | 0 Mo |
+
+![](figures/fig11_model_comparison.png)
+
 ## 6. Priorités d'intervention (notebook 04, état live GBFS)
 
-Snapshot : **17/11/2026 14:00** (heure de New York), horizon 2 h.
+Snapshot : **22/11/2026 12:00** (heure de New York), horizon 2 h.
 
 | État | Stations |
 |---|---:|
-| vide maintenant | 259 |
-| risque vide | 236 |
-| saturee maintenant | 197 |
-| risque saturee | 36 |
-| ok | 1742 |
+| vide maintenant | 189 |
+| risque vide | 178 |
+| saturee maintenant | 148 |
+| risque saturee | 119 |
+| ok | 1827 |
 
-Vélos à déplacer pour ramener les stations à risque à 50 % : **9 781**.
+Vélos à déplacer pour ramener les stations à risque à 50 % : **7 965**.
 
 | Rang | Station | Vélos dispo / capacité | Départs prévus | Arrivées prévues | État | Action |
 |---:|---|---:|---:|---:|---|---|
-| 1 | Broadway & W 25 St | 105 / 109 | 69.9 | 62.2 | saturee maintenant | retirer des velos (-43) |
-| 2 | W 21 St & 6 Ave | 63 / 74 | 82.0 | 82.1 | saturee maintenant | retirer des velos (-26) |
-| 3 | Park Ave & E 42 St | 75 / 83 | 51.3 | 50.6 | saturee maintenant | retirer des velos (-32) |
-| 4 | 8 Ave & W 31 St | 85 / 97 | 33.4 | 49.0 | risque saturee | retirer des velos (-49) |
-| 5 | Broadway & E 19 St | 92 / 99 | 38.5 | 34.9 | saturee maintenant | retirer des velos (-38) |
-| 6 | W 24 St & 7 Ave | 74 / 79 | 41.8 | 50.0 | risque saturee | retirer des velos (-39) |
-| 7 | E 10 St & Ave A | 0 / 107 | 24.3 | 28.3 | vide maintenant | ajouter des velos (+50) |
-| 8 | W Broadway & Spring St | 98 / 99 | 25.0 | 24.2 | saturee maintenant | retirer des velos (-47) |
-| 9 | Forsyth St & Grand St | 90 / 93 | 32.0 | 34.4 | risque saturee | retirer des velos (-46) |
-| 10 | University Pl & E 8 St | 74 / 79 | 32.8 | 31.5 | saturee maintenant | retirer des velos (-33) |
+| 1 | 10 Ave & W 14 St | 74 / 81 | 43.5 | 47.1 | saturee maintenant | retirer des velos (-37) |
+| 2 | 12 Ave & W 40 St | 1 / 76 | 51.5 | 40.5 | risque vide | ajouter des velos (+35) |
+| 3 | Cooper Square & Astor Pl | 80 / 87 | 32.1 | 32.7 | risque saturee | retirer des velos (-41) |
+| 4 | W 31 St & 7 Ave | 79 / 84 | 27.3 | 26.1 | saturee maintenant | retirer des velos (-38) |
+| 5 | W Broadway & Spring St | 94 / 99 | 18.6 | 22.5 | saturee maintenant | retirer des velos (-47) |
+| 6 | 9 Ave & W 18 St | 82 / 84 | 22.1 | 21.8 | saturee maintenant | retirer des velos (-41) |
+| 7 | W 4 St & 7 Ave S | 42 / 60 | 45.4 | 56.9 | risque saturee | retirer des velos (-27) |
+| 8 | Bleecker St & Crosby St | 61 / 63 | 31.5 | 29.3 | saturee maintenant | retirer des velos (-29) |
+| 9 | Lafayette St & Jersey St | 56 / 60 | 29.7 | 31.6 | saturee maintenant | retirer des velos (-28) |
+| 10 | Metropolitan Ave & Bedford Ave | 52 / 54 | 38.5 | 39.0 | risque saturee | retirer des velos (-27) |
 
 ![](figures/fig6_priority_states.png)
 
@@ -106,10 +138,12 @@ Vélos à déplacer pour ramener les stations à risque à 50 % : **9 781**.
 
 ## 8. MLOps : promotion du modèle
 
-| Modèle | Version candidate | MAE candidate | Champion avant | MAE champion | Baseline | Promu |
-|---|---:|---:|---:|---:|---:|---|
-| smartbike_demand_model_departures | 2 | 1.2956 | 1 | 1.2976 | 1.3388 | oui |
-| smartbike_demand_model_arrivals | 2 | 1.3119 | 1 | 1.3097 | 1.3755 | non |
+Le candidat et le champion en place sont ré-évalués sur la **même** semaine de test, avec le critère de la sélection (déviance de Poisson) ; le candidat doit aussi battre la baseline (déviance et MAE).
+
+| Modèle | Candidat | Déviance candidat | Champion avant | Déviance champion | Déviance baseline | MAE candidat / champion | Promu |
+|---|---|---:|---|---:|---:|---:|---|
+| smartbike_demand_model_departures | v5 Extra Trees | 1.4271 | v2 Gradient boosting (perte Poisson) | 1.5030 | 1.4988 | 1.3148 / 1.2956 | **oui** |
+| smartbike_demand_model_arrivals | v5 Extra Trees | 1.4836 | v1 Gradient boosting (perte Poisson) | 1.5303 | 1.5720 | 1.3379 / 1.3124 | **oui** |
 
 ## 9. Tournées des camions de rééquilibrage (OR-Tools)
 
@@ -117,10 +151,10 @@ Flotte : 3 camions de 30 vélos, tournée de 240 min, 80 stations candidates (le
 
 | Méthode | Arrêts | Vélos déplacés | Urgence couverte | Distance | Vélos / km |
 |---|---:|---:|---:|---:|---:|
-| greedy (liste de priorité) | 27 | 621 | 38% | 109 km | 5.7 |
-| optimisé (OR-Tools) | 40 | 989 | 60% | 74 km | 13.4 |
+| greedy (liste de priorité) | 25 | 637 | 40% | 106 km | 6.0 |
+| optimisé (OR-Tools) | 33 | 839 | 53% | 93 km | 9.0 |
 
-Sur ce relevé, l'optimisation déplace **+59% de vélos** et couvre **60%** de l'urgence (contre 38%) en roulant 74 km au lieu de 109 km. Le gain vient de l'ordre des arrêts : enchaîner une station pleine puis une station vide voisine, au lieu de traverser la ville au rythme du classement.
+Sur ce relevé, l'optimisation déplace **+32% de vélos** et couvre **53%** de l'urgence (contre 40%) en roulant 93 km au lieu de 106 km. Le gain vient de l'ordre des arrêts : enchaîner une station pleine puis une station vide voisine, au lieu de traverser la ville au rythme du classement.
 
 ## 10. Fiabilité des alertes : backtest sur l'historique réel
 
@@ -128,12 +162,12 @@ Vérité terrain : flux GBFS enregistré toutes les 5 min (`scripts/gbfs_history
 
 | Alerte | Méthode | Alertes | Ruptures réelles | Précision | Rappel | F1 | PR-AUC |
 |---|---|---:|---:|---:|---:|---:|---:|
-| vide | stock déjà bas (sans prévision) | 422 | 151 | 32% | 91% | 0.48 | 0.47 |
-| vide | prévision ponctuelle (ancienne règle) | 373 | 151 | 34% | 85% | 0.49 | 0.42 |
-| vide | probabiliste (Monte Carlo) | 341 | 151 | 39% | 88% | 0.54 | 0.55 |
-| pleine | stock déjà bas (sans prévision) | 354 | 136 | 36% | 93% | 0.51 | 0.58 |
-| pleine | prévision ponctuelle (ancienne règle) | 103 | 136 | 50% | 38% | 0.43 | 0.41 |
-| pleine | probabiliste (Monte Carlo) | 181 | 136 | 48% | 64% | 0.55 | 0.48 |
+| vide | stock déjà bas (sans prévision) | 411 | 151 | 33% | 91% | 0.49 | 0.46 |
+| vide | prévision ponctuelle (ancienne règle) | 340 | 151 | 34% | 77% | 0.47 | 0.42 |
+| vide | probabiliste (Monte Carlo) | 180 | 151 | 52% | 62% | 0.57 | 0.54 |
+| pleine | stock déjà bas (sans prévision) | 344 | 136 | 36% | 92% | 0.52 | 0.57 |
+| pleine | prévision ponctuelle (ancienne règle) | 278 | 136 | 40% | 82% | 0.54 | 0.41 |
+| pleine | probabiliste (Monte Carlo) | 169 | 136 | 58% | 72% | 0.64 | 0.64 |
 
 Lecture : la précision dit si l'opérateur peut faire confiance à une alerte, le rappel combien de ruptures réelles ont été vues à temps ; la PR-AUC mesure la qualité du classement des stations (hasard = prévalence, ici 6.9%).
 

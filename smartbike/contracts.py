@@ -76,6 +76,19 @@ CONTRACTS: dict[str, DataFrameSchema] = {
         "model_mae": Column(float, Check.gt(0)),
         "baseline_mae": Column(float, Check.gt(0)),
     }),
+    "gold_model_comparison": DataFrameSchema(
+        {
+            "target": Column(str, Check.isin(["departures", "arrivals"])),
+            "model": Column(str),
+            "val_poisson_dev": Column(float, Check.gt(0)),
+            "val_mae": Column(float, Check.gt(0)),
+            "selected": Column(bool),
+        },
+        checks=[Check(lambda df: df.groupby("target").selected.sum().eq(1).all(),
+                      error="exactly one selected model per target"),
+                Check(lambda df: ~df.duplicated(["target", "model"]), error="one row per target and model"),
+                Check(lambda df: ~(df.selected & df.model.eq("baseline")), error="the baseline is not a model")],
+    ),
     "gold_alert_backtest": DataFrameSchema({
         "event": Column(str, Check.isin(["empty", "full"])),
         "method": Column(str, Check.isin(["naive", "point", "probabilistic"])),

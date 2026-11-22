@@ -73,3 +73,17 @@ observée vide/pleine dans (t0, t0+H] ? Fenêtres refusées si l'enregistrement 
 exclues ; seuil réglé sur la 1re moitié des instants, mesuré sur la 2de.
 **Preuve.** Un test a révélé que pandas 3 stocke les dates en µs alors que `Timestamp.value` est en ns : la détection des
 trous ne marchait pas et aurait faussé tout le backtest. Corrigé (comparaison de durées) avant le premier calcul réel.
+
+## ADR-09 · Sélection du modèle sur la déviance de Poisson, parmi 7 algorithmes
+**Contexte.** Exigence du cours : au moins 4 modèles réels comparés sur les données réelles. L'ancien critère de
+promotion (MAE) ne mesurait pas ce que consomme la simulation du risque (ADR-02) : un **taux** de Poisson, pas une valeur
+ponctuelle. Une prévision proche de la médiane (souvent 0 ou 1 trajet) a une bonne MAE mais un taux mal calibré.
+**Décision.** 7 algorithmes (Ridge, GLM de Poisson, MLP, Random Forest, Extra Trees, gradient boosting L2 et Poisson)
++ baseline, entraînés sur le même échantillon (1 M lignes) et jugés sur une semaine de **validation** distincte de la
+semaine de **test** (qui ne sert qu'une fois, au modèle retenu). Critère : déviance de Poisson ; parmi les modèles à
+moins de 1 % du meilleur, le plus léger. Promotion MLflow : candidat et champion ré-évalués sur la même semaine de test,
+même critère, et le candidat doit battre la baseline.
+**Résultat.** Extra Trees retenu pour les deux cibles (+4,4 % / +5,4 % de déviance vs baseline en validation) et promu
+champion v5 (test : 1,427 contre 1,503 pour l'ancien gradient boosting en départs). Compromis assumé : sa MAE de test est
+légèrement moins bonne (1,315 contre 1,296), car la MAE récompense les prévisions proches de la médiane ; Ridge et le MLP
+ont une MAE correcte mais une déviance très mauvaise (taux mal calibrés).
