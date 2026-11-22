@@ -22,4 +22,5 @@ include = ["smartbike*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]  # app/ and smartbike/ importable when pytest is run directly (CI)
 filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning"]
