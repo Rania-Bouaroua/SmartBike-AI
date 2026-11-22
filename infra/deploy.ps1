@@ -26,7 +26,9 @@ $ErrorActionPreference = "Stop"
 
 # Windows PowerShell does not stop on a failing native command: check every az exit code.
 function Invoke-Az {
-    $out = & az @args
+    # warnings on stderr (e.g. "account already exists" on a re-run) must not stop the script: only the exit code counts
+    $ErrorActionPreference = "Continue"
+    $out = & az @args --only-show-errors
     if ($LASTEXITCODE -ne 0) { throw "az $($args -join ' ') failed (exit $LASTEXITCODE)" }
     return $out
 }

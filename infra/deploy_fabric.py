@@ -42,7 +42,13 @@ class Fabric:
         if not self.apply:
             print(f"  [dry-run] {method} {url}")
             return {"id": "<dry-run>", "value": []}
-        r = self.session.request(method, url, timeout=120, **kw)
+        for attempt in range(8):  # 429 = capacity throttled (shared trial capacities): back off and retry
+            r = self.session.request(method, url, timeout=120, **kw)
+            if r.status_code != 429:
+                break
+            wait = int(r.headers.get("Retry-After", 30)) + 15 * attempt
+            print(f"  capacity busy (429), retry in {wait}s ({attempt + 1}/8)")
+            time.sleep(wait)
         if r.status_code == 202 and "Location" in r.headers:            # long-running operation
             return self._wait(r.headers["Location"], int(r.headers.get("Retry-After", 5)))
         if r.status_code >= 400:

@@ -28,3 +28,6 @@ models/
 dist/
 build/
 *.egg-info/
+
+# cloud screenshots (contain e-mail / subscription id) - kept out of the public repo
+docs/screenshots/
