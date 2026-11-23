@@ -89,9 +89,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--workspace-id", required=True)
     ap.add_argument("--apply", action="store_true", help="really call the API (default: dry run)")
+    ap.add_argument("--only", nargs="+", metavar="NOTEBOOK",
+                    help="deploy only these notebooks (e.g. nb_06_star_schema); skips Lakehouse and Environment. "
+                         "Updating a notebook resets what was set in the portal (default Lakehouse, environment)")
     args = ap.parse_args()
     fab = Fabric(args.workspace_id, args.apply)
 
+    if args.only:
+        return deploy_notebooks(fab, args.only, args.apply)
     print("1. Lakehouse")
     fab.ensure("lakehouses", "lh_smartbike")
 
@@ -106,8 +111,14 @@ def main() -> int:
     fab.call("POST", f"/environments/{env_id}/staging/publish")
     print(f"  ~ {wheels[-1].name} uploaded, environment published (add ortools + pandera from PyPI in the portal)")
 
+    return deploy_notebooks(fab, None, args.apply)
+
+
+def deploy_notebooks(fab: Fabric, only: list[str] | None, apply: bool) -> int:
     print("3. Notebooks")
     for nb in sorted((ROOT / "notebooks" / "fabric").glob("nb_*.ipynb")):
+        if only and nb.stem not in only:
+            continue
         definition = {"format": "ipynb", "parts": [
             {"path": "notebook-content.ipynb", "payload": b64(nb), "payloadType": "InlineBase64"}]}
         nb_id = fab.find("notebooks", nb.stem)
@@ -117,7 +128,7 @@ def main() -> int:
         else:
             fab.call("POST", "/notebooks", json={"displayName": nb.stem, "definition": definition})
             print(f"  + {nb.stem} created")
-    print("done" if args.apply else "dry run only - add --apply to deploy")
+    print("done" if apply else "dry run only - add --apply to deploy")
     return 0
 
 

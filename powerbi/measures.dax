@@ -153,3 +153,55 @@ PR-AUC alerte = AVERAGE ( gold_alert_backtest[pr_auc] )
 
 Prévalence rupture = AVERAGE ( gold_alert_backtest[prevalence] )
 
+
+// =====================================================================
+// Star schema (notebook 06) - the two business problems
+// Tables: fact_station_availability, fact_station_hourly, fact_station_daily_stress, fact_station_risk,
+//         fact_trips, dim_station, dim_date, dim_time, dim_weather
+// =====================================================================
+
+// ---------- Problem 1 : bike shortage (no bike to rent) ----------
+% temps station vide =
+CALCULATE ( AVERAGE ( fact_station_availability[is_empty] ), fact_station_availability[in_service] = TRUE () )
+
+% temps peu de vélos (<= 2) =
+CALCULATE ( AVERAGE ( fact_station_availability[is_low_bikes] ), fact_station_availability[in_service] = TRUE () )
+
+Vélos disponibles (moy.) = AVERAGE ( fact_station_availability[bikes_available] )
+
+Stations vides (dernier relevé) =
+VAR last_ts = MAX ( fact_station_availability[snapshot_ts] )
+RETURN CALCULATE ( SUM ( fact_station_availability[is_empty] ), fact_station_availability[snapshot_ts] = last_ts )
+
+Vélos à prévoir à l'ouverture (moy.) = AVERAGE ( fact_station_daily_stress[bikes_needed_at_open] )
+
+Jours où la demande dépasse la capacité (vélos) = SUM ( fact_station_daily_stress[shortage_exceeds_capacity] )
+
+// ---------- Problem 2 : docking capacity (no free dock to return a bike) ----------
+% temps station pleine =
+CALCULATE ( AVERAGE ( fact_station_availability[is_full] ), fact_station_availability[in_service] = TRUE () )
+
+% temps peu de places (<= 2) =
+CALCULATE ( AVERAGE ( fact_station_availability[is_low_docks] ), fact_station_availability[in_service] = TRUE () )
+
+Places libres (moy.) = AVERAGE ( fact_station_availability[docks_available] )
+
+Stations pleines (dernier relevé) =
+VAR last_ts = MAX ( fact_station_availability[snapshot_ts] )
+RETURN CALCULATE ( SUM ( fact_station_availability[is_full] ), fact_station_availability[snapshot_ts] = last_ts )
+
+Places à prévoir à l'ouverture (moy.) = AVERAGE ( fact_station_daily_stress[docks_needed_at_open] )
+
+Jours où les retours dépassent la capacité (places) = SUM ( fact_station_daily_stress[docking_exceeds_capacity] )
+
+// ---------- Demand that causes both ----------
+Départs = SUM ( fact_station_hourly[departures] )
+Arrivées = SUM ( fact_station_hourly[arrivals] )
+Flux net (arrivées - départs) = [Arrivées] - [Départs]
+Départs prévus = SUM ( fact_station_hourly[pred_departures] )
+Arrivées prévues = SUM ( fact_station_hourly[pred_arrivals] )
+
+// ---------- 2-hour outlook ----------
+Risque vide (2 h, moy.) = AVERAGE ( fact_station_risk[p_empty] )
+Risque plein (2 h, moy.) = AVERAGE ( fact_station_risk[p_full] )
+Vélos à déplacer = SUM ( fact_station_risk[bikes_to_move] )

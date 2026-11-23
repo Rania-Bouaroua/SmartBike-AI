@@ -23,7 +23,8 @@ import pandas as pd
 import requests
 
 STATUS_URL = "https://gbfs.citibikenyc.com/gbfs/en/station_status.json"
-COLUMNS = ["station_id", "num_bikes_available", "num_docks_available", "is_renting", "is_returning", "last_reported"]
+COLUMNS = ["station_id", "num_bikes_available", "num_ebikes_available", "num_bikes_disabled", "num_docks_available",
+           "num_docks_disabled", "is_renting", "is_returning", "last_reported"]
 OUT = pathlib.Path(__file__).resolve().parents[1] / "data" / "raw" / "gbfs_history"
 
 
@@ -31,7 +32,7 @@ def snapshot(session: requests.Session) -> pathlib.Path:
     resp = session.get(STATUS_URL, timeout=30)
     resp.raise_for_status()
     payload = resp.json()
-    df = pd.DataFrame(payload["data"]["stations"])[COLUMNS]
+    df = pd.DataFrame(payload["data"]["stations"]).reindex(columns=COLUMNS)   # missing fields -> null
     taken = dt.datetime.fromtimestamp(payload["last_updated"], tz=dt.UTC)
     df["snapshot_utc"] = pd.Timestamp(taken)
     df["last_reported"] = pd.to_datetime(df["last_reported"], unit="s", utc=True)

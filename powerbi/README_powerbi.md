@@ -10,6 +10,30 @@ le modèle, les mesures DAX ([`measures.dax`](measures.dax)) et la conception de
   de OneLake sans import ni rafraîchissement planifié).
 * Alternative hors Fabric (Power BI Desktop) : *Get data → Folder* sur `data/lakehouse/Tables/<table>/` puis *Combine & Transform* (fichiers Parquet produits localement), ou exécuter `python docs/export_for_powerbi.py` qui crée un fichier Parquet unique par table dans `data/powerbi/`.
 
+### Modèle en étoile (recommandé) — notebook 06
+
+Les deux problématiques du projet sont **la pénurie de vélos** (station vide : impossible de louer) et **la capacité
+de réception** (station pleine : impossible de rendre un vélo). Le notebook `06_star_schema` réorganise la couche
+Gold en tables de faits et de dimensions, reliées par des clés entières :
+
+| Table | Type | Grain | Relation (1 → *) |
+|---|---|---|---|
+| `dim_station` | dimension | une station | `station_key` → toutes les tables de faits (`fact_trips` : `start_station_key`, active ; `end_station_key`, inactive) |
+| `dim_date` | dimension | un jour | `date_key` → toutes les tables de faits (marquer comme *table de dates*) |
+| `dim_time` | dimension | une heure (0-23) | `hour_key` → `fact_station_availability`, `fact_station_hourly`, `fact_station_risk`, `fact_trips` |
+| `dim_weather` | dimension | une heure de météo | `weather_key` → `fact_station_hourly`, `fact_trips` |
+| `fact_station_availability` | faits | station × relevé GBFS (5 min) | vélos / places libres, `is_empty`, `is_full` |
+| `fact_station_hourly` | faits | station × heure | départs, arrivées, flux net, prévisions |
+| `fact_station_daily_stress` | faits | station × jour | vélos et places à prévoir à l'ouverture |
+| `fact_station_risk` | faits | station × prévision | probabilité vide / pleine sous 2 h, vélos à déplacer |
+| `fact_trips` | faits | trajet | détail de la demande |
+
+Filtrage simple (dimension → faits), aucune relation entre tables de faits. Mesures : fin de
+[`measures.dax`](measures.dax) (`% temps station vide`, `% temps station pleine`, `Vélos à prévoir à l'ouverture`,
+`Places à prévoir à l'ouverture`…).
+
+### Tables Gold d'origine (pages existantes)
+
 | Table | Rôle | Relation |
 |---|---|---|
 | `gold_daily_kpis` | dimension date + faits journaliers | `date` 1 → * `gold_station_hourly[date]` |

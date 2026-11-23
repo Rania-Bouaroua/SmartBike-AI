@@ -270,6 +270,27 @@
         }
       },
       {
+        "name": "NB_06_Star_Schema",
+        "description": "Fact & dimension tables for Power BI (bike shortage / docking capacity).",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "NB_05_Advanced_Aggregations",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.01:00:00",
+          "retry": 1
+        },
+        "typeProperties": {
+          "notebookId": "<id of nb_06_star_schema>",
+          "workspaceId": "<ws-smartbike-dev id>"
+        }
+      },
+      {
         "name": "If_Retrain_Model",
         "type": "IfCondition",
         "dependsOn": [
