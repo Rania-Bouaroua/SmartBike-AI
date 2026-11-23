@@ -31,7 +31,8 @@ TEAM: list[str] = ["Rania BOUAROUA", "Salma BENMOUMA", "Oumaima GASSI", "Leonce 
 NAVY, BLUE, GREY = RGBColor(0x16, 0x32, 0x4F), RGBColor(0x2A, 0x78, 0xD6), RGBColor(0x52, 0x51, 0x4E)
 STATUS = {  # label, cell fill
     "fait": ("FAIT", "D7F0E5"),
-    "pret": ("PRÊT À DÉPLOYER", "DCE9FA"),
+    "encours": ("EN COURS", "FFF1C2"),
+    "pret": ("PRÊT", "DCE9FA"),
     "afaire": ("À FAIRE", "FDEBD3"),
 }
 MODEL_LABELS = {"baseline": "Baseline (moyenne historique)", "ridge": "Ridge (linéaire)", "poisson_glm": "GLM de Poisson",
@@ -146,128 +147,114 @@ cmp_ = t("gold_model_comparison") if (T / "gold_model_comparison").exists() else
 promo = t("gold_model_promotion_log") if (T / "gold_model_promotion_log").exists() else None
 today = dt.date.today()
 
+# ------------------------------------------------------------------ status of the project (2 pages, for the professor)
+SHOTS = ROOT / "docs" / "screenshots"   # cloud screenshots (gitignored: they show e-mail / subscription id)
+SCORE = {"fait": 1.0, "encours": 0.6, "pret": 0.4, "afaire": 0.0}
+PREVIOUS = 45   # progress announced at the previous checkpoint (before the cloud deployment)
+
+requirements = [
+    ["A. Problème & sources", "3 sources hétérogènes : archives CSV Citi Bike, API JSON GBFS (temps réel), "
+     "API Open-Meteo. Dictionnaire de données.", "fait"],
+    ["B. Ingestion batch", "Données brutes chargées dans ADLS Gen2 (167 fichiers, 2,8 Go). Pipeline Data Factory "
+     "défini en JSON, à créer dans Fabric.", "encours"],
+    ["C. Stockage", "Déployé : ADLS Gen2 sécurisé (conteneur landing) + Lakehouse lh_smartbike relié par un "
+     "raccourci « bronze » (zéro copie).", "fait"],
+    ["D. Spark → Delta", f"Exécuté en local sur les vraies données ({valid / raw_trips:.2%} de lignes valides). "
+     "Notebooks et environnement Spark déployés dans Fabric, exécution en cours.", "encours"],
+    ["E. Temps réel", "Collecteur GBFS fonctionnel, 7 requêtes KQL écrites. Eventstream + Eventhouse à créer.",
+     "pret"],
+    ["F. Power BI", "Plan de 10 pages, mesures DAX, thème prêts. Fichier .pbix à construire.", "afaire"],
+    ["G. Sécurité & gouvernance", "Déployé et testé : 3 Azure Policies (refus vérifiés), RBAC 3 personas, "
+     "Key Vault RBAC, audit Log Analytics. Démo du refus 403 à enregistrer.", "encours"],
+    ["H. Ingénierie", "Architecture, README, Git, CI GitHub Actions (verte), tests, Docker, scripts "
+     "de déploiement / nettoyage.", "fait"],
+    ["I. Machine Learning", "7 algorithmes comparés à une baseline, MLflow, champion / challenger.", "fait"],
+    ["Bonus", "API FastAPI + app Streamlit, alertes, tournées optimisées (OR-Tools).", "fait"],
+]
+deliverables = [
+    ["1. Proposition", "rédigée", "fait"],
+    ["2. Schéma d'architecture", "docs/architecture.png", "fait"],
+    ["3. Dépôt Git + README", "github.com/Rania-Bouaroua/SmartBike-AI", "fait"],
+    ["4. Rapport technique", "version provisoire ; captures cloud en cours d'ajout", "pret"],
+    ["5. Rapport Power BI", "à construire", "afaire"],
+    ["6. Démo 10-15 min", "script écrit ; vidéo à enregistrer", "afaire"],
+    ["7. Inventaire des ressources", "ressources Azure / Fabric réelles connues, à reporter", "pret"],
+]
+items = [r[2] for r in requirements] + [r[2] for r in deliverables]
+progress = round(100 * sum(SCORE[s] for s in items) / len(items))
+
 # ------------------------------------------------------------------ title block
 logo = ROOT / "assets" / "logo_full.png"
 if logo.exists():
-    doc.add_picture(str(logo), width=Cm(7))
+    doc.add_picture(str(logo), width=Cm(5.5))
     doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-para("SmartBike AI — État d'avancement du projet", bold=True, size=18, color=NAVY, align=WD_ALIGN_PARAGRAPH.CENTER)
+para("SmartBike AI — État d'avancement", bold=True, size=18, color=NAVY, align=WD_ALIGN_PARAGRAPH.CENTER)
 para("Design of Cloud Data-Driven Applications · 2026-2027 · Pr. Ibrahim RAHHAL", size=10, color=GREY,
      align=WD_ALIGN_PARAGRAPH.CENTER)
-para(f"Point au {today:%d/%m/%Y}", bold=True, size=10, color=BLUE, align=WD_ALIGN_PARAGRAPH.CENTER)
-para("Membres du groupe : " + (", ".join(TEAM) if TEAM else "……………………………………………………………………………"),
-     size=10, align=WD_ALIGN_PARAGRAPH.CENTER)
+para(f"Point au {today:%d/%m/%Y} · " + ", ".join(TEAM), size=9.5, align=WD_ALIGN_PARAGRAPH.CENTER)
+
+# progress bar: one row, the filled part proportional to the score
+para(f"Avancement global : {PREVIOUS} % au point précédent → {progress} % aujourd'hui", bold=True, size=14,
+     color=BLUE, align=WD_ALIGN_PARAGRAPH.CENTER)
+bar = doc.add_table(rows=1, cols=2)
+bar.alignment = WD_TABLE_ALIGNMENT.CENTER
+for cell, w, fill in [(bar.rows[0].cells[0], 15 * progress / 100, "2A78D6"),
+                      (bar.rows[0].cells[1], 15 * (100 - progress) / 100, "E3E8EF")]:
+    cell.width = Cm(w)
+    shade(cell, fill)
+    cell.paragraphs[0].add_run(" ").font.size = Pt(4)
+para("Calcul : exigences du cahier des charges + livrables ; FAIT = 1, EN COURS = 0,6, PRÊT = 0,4, À FAIRE = 0.",
+     italic=True, size=8, color=GREY, align=WD_ALIGN_PARAGRAPH.CENTER)
 
 doc.add_heading("1. En bref", level=1)
-para("Sujet : anticiper les stations de vélos partagés vides ou saturées (données réelles Citi Bike New York + météo) "
-     "et aider l'opérateur à décider où intervenir.")
-bullet(f" toute la chaîne de traitement tourne sur les vraies données : {fmt(valid)} trajets valides sur {days} jours "
-       f"(août → octobre 2026), {n_stations} stations, médaillon Bronze → Silver → Gold, modèles ML, alertes, application.",
-       "Réalisé :")
-bullet(" le code des éléments cloud est écrit et testé (notebooks Fabric .ipynb, pipeline Data Factory, tables et "
-       "requêtes KQL, scripts Azure de déploiement / nettoyage, Azure Policies, mesures DAX).",
-       "Prêt à déployer :")
-bullet(" déploiement dans notre tenant Azure / Fabric, construction du rapport Power BI (.pbix), démonstration "
-       "et vidéo de secours.", "Reste à faire :")
+para("Sujet : anticiper les stations Citi Bike (New York) vides ou saturées à partir des trajets réels, du temps "
+     "réel GBFS et de la météo, et indiquer à l'opérateur où intervenir.")
+bullet(f" chaîne complète exécutée sur les vraies données : {fmt(valid)} trajets valides, {days} jours, "
+       f"{n_stations} stations, médaillon Bronze → Silver → Gold, 7 modèles ML comparés, alertes, application.",
+       "Données & ML :")
+bullet(" Azure déployé (Germany West Central) : ADLS Gen2, Key Vault, Log Analytics, 3 Azure Policies testées, "
+       "rôles Admin / Data Engineer / Analyst attribués. Fabric : workspace, Lakehouse, environnement Spark, "
+       "5 notebooks, raccourci vers les données brutes.", "Cloud (nouveau) :")
+bullet(" exécution des notebooks dans Fabric, temps réel (Eventstream / KQL), Power BI, démo et vidéo.",
+       "Reste à faire :")
 
-# ------------------------------------------------------------------ requirements table
-doc.add_heading("2. Avancement par exigence du cahier des charges", level=1)
-rows = [
-    ["A. Problème & sources", "3 sources hétérogènes : archives CSV Citi Bike, API JSON GBFS (temps réel), API "
-     "Open-Meteo. Dictionnaire de données et classification des champs.", "fait"],
-    ["B. Ingestion batch", "Scripts de téléchargement exécutés ; pipeline pl_smartbike_batch (Copy HTTP → ADLS + "
-     "notebooks, paramètre month, mensuel) défini en JSON.", "pret"],
-    ["C. Stockage", "ADLS Gen2 (landing) + Lakehouse OneLake (raccourci), couches raw/curated justifiées. "
-     "Reproduit en local.", "pret"],
-    ["D. Spark → Delta", f"Notebooks 01, 02, 05 exécutés : contrôles qualité ({valid / raw_trips:.2%} de lignes "
-     "valides), réconciliation des stations, jointure météo, agrégats, fenêtres, CUBE, matrice O-D.", "fait"],
-    ["E. Temps réel", "Collecteur GBFS (60 s) fonctionnel, historique enregistré ; tables Eventhouse + 7 requêtes "
-     "KQL (dont fenêtres 15 min et glissantes) écrites. Eventstream à brancher.", "pret"],
-    ["F. Power BI", "Plan de 10 pages (une question par page), mesures DAX, thème et données Gold exportés. "
-     "Fichier .pbix à construire.", "afaire"],
-    ["G. Sécurité & gouvernance", "3 personas RBAC, Key Vault, 3 Azure Policies (régions, tag, accès public), "
-     "Purview, rétention, audit, budget : documentés et scriptés. Démonstration du refus 403 à faire.", "pret"],
-    ["H. Ingénierie", "Diagramme d'architecture, README, dépôt Git, conventions de nommage, CI GitHub Actions, "
-     "tests pytest, Docker, script de nettoyage.", "fait"],
-    ["I. Machine Learning", "7 algorithmes comparés à une baseline, split chronologique, MLflow, promotion "
-     "champion / challenger, prévisions en table Gold.", "fait"],
-    ["Bonus", "API FastAPI + application Streamlit, alertes (qualité / opérationnelles / modèle), tournées camion "
-     "optimisées (OR-Tools), backtest des alertes sur l'historique réel.", "fait"],
-]
-table(["Exigence", "Ce qui est réalisé", "Statut"], rows, [3.6, 11.0, 3.0], status_col=2)
-para("FAIT = exécuté sur les vraies données · PRÊT À DÉPLOYER = code écrit et testé en local, reste à l'exécuter "
-     "dans Azure / Fabric · À FAIRE = pas encore commencé.", italic=True, size=8.5, color=GREY)
+doc.add_heading("2. Avancement par exigence", level=1)
+table(["Exigence", "Réalisé", "Statut"], requirements, [3.6, 11.2, 2.8], status_col=2, size=8)
 
-# ------------------------------------------------------------------ architecture
-doc.add_heading("3. Architecture cible", level=1)
-figure(str(ROOT / "docs" / "architecture.png"), 17, "Chaîne Collect → Ingest → Store → Process → Analyze → "
-       "Visualize → Secure & Govern.")
+# ------------------------------------------------------------------ cloud proof (screenshots)
+shots = [("01_rg_ressources.png", "Ressources Azure (groupe rg-smartbike-dev)"),
+         ("05_policies.png", "Azure Policies : 100 % conformes"),
+         ("09_fabric_workspace.png", "Workspace Fabric déployé"),
+         ("06_iam.png", "Rôles RBAC (moindre privilège)")]
+shots = [(f, c) for f, c in shots if (SHOTS / f).exists()]
+if shots:
+    doc.add_heading("3. Preuves du déploiement cloud", level=1)
+    grid = doc.add_table(rows=(len(shots) + 1) // 2, cols=2)
+    grid.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for k, (f, cap) in enumerate(shots):
+        cell = grid.rows[k // 2].cells[k % 2]
+        cell.width = Cm(8.7)
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.add_run().add_picture(str(SHOTS / f), width=Cm(8.4))
+        r = cell.add_paragraph().add_run(cap)
+        r.italic, r.font.size, r.font.color.rgb = True, Pt(8), GREY
+        cell.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-# ------------------------------------------------------------------ results
-doc.add_heading("4. Premiers résultats sur les données réelles", level=1)
-weekday = daily[pd.to_datetime(daily["date"]).dt.day_of_week < 5]
-table(["Indicateur", "Valeur"], [
-    ["Trajets bruts → valides", f"{fmt(raw_trips)} → {fmt(valid)}"],
-    ["Période couverte", f"{days} jours (août → octobre 2026)"],
-    ["Trajets par jour (moyenne / jours ouvrés)",
-     f"{fmt(daily['trips'].mean())} / {fmt(weekday['trips'].mean())}" if "trips" in daily else "—"],
-    ["Stations actives", fmt(n_stations)],
-], [8.5, 8.0])
-figure("fig1_daily_trips.png", 13.5, "Trajets par jour (notebook 02).")
+doc.add_heading("4. Livrables", level=1)
+table(["Livrable", "État", "Statut"], deliverables, [4.5, 10.3, 2.8], status_col=2, size=8)
 
-if cmp_ is not None:
-    doc.add_heading("Machine Learning : comparaison des modèles", level=2)
-    para("Prévision du nombre de départs et d'arrivées par station et par heure. Les modèles sont comparés sur une "
-         "semaine de validation ; la semaine de test ne sert qu'une fois, au modèle retenu. Critère : déviance de "
-         "Poisson (plus bas = meilleur).")
-    d = cmp_[cmp_.target == "departures"].sort_values("val_poisson_dev")
-    rows_ml, sel = [], set()
-    for k, r in enumerate(d.itertuples()):
-        rows_ml.append([str(r.rank), MODEL_LABELS.get(r.model, r.model) + ("  ✓ retenu" if r.selected else ""),
-                        f"{r.val_poisson_dev:.4f}", f"{r.val_mae:.3f}", f"{r.val_rmse:.3f}",
-                        f"{r.val_dev_gain_vs_baseline_pct:+.1f} %"])
-        if r.selected:
-            sel.add(k)
-    table(["Rang", "Modèle (cible : départs)", "Déviance", "MAE", "RMSE", "Gain vs baseline"], rows_ml,
-          [1.3, 6.5, 2.3, 2.0, 2.0, 3.0], bold_rows=sel)
-    figure("fig11_model_comparison.png", 16.5, "Gain de chaque algorithme sur la baseline (départs et arrivées).")
-
-if promo is not None:
-    lines = []
-    for r in promo.itertuples():
-        cible = "départs" if "departures" in r.model else "arrivées"
-        lines.append(f"{cible} : {MODEL_LABELS.get(r.algorithm, r.algorithm)} "
-                     f"{'promu champion' if r.promoted else 'non promu (le champion en place reste meilleur)'}")
-    para("Promotion MLOps (MLflow, même semaine de test) — " + " ; ".join(lines) + ".")
-
-figure("fig6_priority_states.png", 11, "État des stations sur un relevé GBFS réel et priorités d'intervention "
-       "(notebook 04).")
-
-# ------------------------------------------------------------------ deliverables + next steps
-doc.add_page_break()
-doc.add_heading("5. Livrables", level=1)
-table(["Livrable", "État", "Statut"], [
-    ["1. Proposition (2-3 pages)", "docs/proposition.md rédigée", "fait"],
-    ["2. Schéma d'architecture", "docs/architecture.png", "fait"],
-    ["3. Dépôt Git + README", "structure, code, tests, CI, instructions de reproduction", "fait"],
-    ["4. Rapport technique (PDF)", "version provisoire générée à partir des résultats ; à compléter avec les "
-     "captures du déploiement cloud", "pret"],
-    ["5. Rapport Power BI", "plan, mesures DAX et données prêts ; .pbix à construire", "afaire"],
-    ["6. Démo 10-15 min", "script de démonstration écrit (docs/demo_script.md) ; vidéo de secours à enregistrer",
-     "afaire"],
-    ["7. Inventaire des ressources", "modèle prêt (docs/cost_and_inventory.md), à remplir après déploiement", "pret"],
-], [4.5, 10.0, 3.1], status_col=2)
-
-doc.add_heading("6. Prochaines étapes", level=1)
+doc.add_heading("5. Prochaines étapes", level=1)
 for i, s in enumerate([
-    "Azure : exécuter infra/deploy.ps1 (groupe de ressources, ADLS, Key Vault, Policies, rôles RBAC, budget).",
-    "Fabric : créer l'espace de travail et le Lakehouse, importer les notebooks, lancer le pipeline batch.",
-    "Temps réel : créer Eventstream + Eventhouse, lancer le collecteur GBFS, exécuter les requêtes KQL.",
-    "Power BI : construire le rapport sur les tables Gold et le publier.",
-    "Sécurité : démontrer le refus d'accès du compte Analyst (403) et une Azure Policy qui bloque.",
-    "Démo : répétition, enregistrement de la vidéo de secours, inventaire et nettoyage des ressources.",
+    "Exécuter les notebooks 01 → 05 dans Fabric et créer le pipeline batch planifié.",
+    "Temps réel : Eventstream + Eventhouse, collecteur GBFS, requêtes KQL et alerte.",
+    "Power BI : construire et publier le rapport sur les tables Gold.",
+    "Sécurité : enregistrer le refus 403 du compte Analyst.",
+    "Finaliser le rapport technique, répéter la démo, enregistrer la vidéo de secours.",
 ], 1):
     bullet(" " + s, f"{i}.")
+para("FAIT = exécuté · EN COURS = déployé, en cours d'exécution · PRÊT = code écrit et testé, reste à déployer · "
+     "À FAIRE = pas commencé.", italic=True, size=8, color=GREY)
 
 # ------------------------------------------------------------------ footer + save
 footer = doc.sections[0].footer.paragraphs[0]
